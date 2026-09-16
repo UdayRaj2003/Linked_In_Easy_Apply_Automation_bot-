@@ -15,6 +15,8 @@ version:    26.01.20.5.08
 '''
 
 
+import time
+
 from config.secrets import *
 from config.settings import showAiErrorAlerts
 from config.personals import ethnicity, gender, disability_status, veteran_status
@@ -23,6 +25,8 @@ from config.search import security_clearance, did_masters
 
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
+from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, is_ai_enabled
+from modules.bot_control import BotStopped, raise_if_stopped
 
 from pyautogui import confirm
 from openai import OpenAI
@@ -46,8 +50,13 @@ ERROR:
 def ai_error_alert(message: str, stackTrace: str, title: str = "AI Connection Error") -> None:
     """
     Function to show an AI error alert and log it.
+    On rate/quota limits (HTTP 429), disables LinkedIn AI + Resume Engine for this run.
     """
     global showAiErrorAlerts
+    if disable_ai_and_resume_on_rate_limit(f"{message} {stackTrace}", source="LinkedIn AI"):
+        # Rate-limit dialog already shown by ai_runtime; skip the huge generic popup.
+        critical_error_log(message, stackTrace)
+        return
     if showAiErrorAlerts:
         if "Pause AI error alerts" == confirm(f"{message}{stackTrace}\n", title, ["Pause AI error alerts", "Okay Continue"]):
             showAiErrorAlerts = False
@@ -76,22 +85,31 @@ def ai_create_openai_client() -> OpenAI:
     """
     try:
         print_lg("Creating OpenAI client...")
-        if not use_AI:
+        if not is_ai_enabled():
             raise ValueError("AI is not enabled! Please enable it by setting `use_AI = True` in `secrets.py` in `config` folder.")
         
-        client = OpenAI(base_url=llm_api_url, api_key=llm_api_key)
+        client = OpenAI(
+            base_url=llm_api_url,
+            api_key=llm_api_key,
+            timeout=float(ai_request_timeout),
+        )
 
         models = ai_get_models_list(client)
         if "error" in models:
             raise ValueError(models[1])
         if len(models) == 0:
             raise ValueError("No models are available!")
-        if llm_model not in [model.id for model in models]:
-            raise ValueError(f"Model `{llm_model}` is not found!")
+        model_ids = [model.id for model in models]
+        if llm_model not in model_ids:
+            print_lg(
+                f"Warning: Model `{llm_model}` was not in the API catalog "
+                f"({len(model_ids)} models listed). Continuing anyway — OpenRouter often omits IDs."
+            )
         
         print_lg("---- SUCCESSFULLY CREATED OPENAI CLIENT! ----")
         print_lg(f"Using API URL: {llm_api_url}")
         print_lg(f"Using Model: {llm_model}")
+        print_lg(f"Models available from API: {len(model_ids)}")
         print_lg("Check './config/secrets.py' for more details.\n")
         print_lg("---------------------------------------------")
 
@@ -128,8 +146,9 @@ def ai_get_models_list(client: OpenAI) -> list[ Model | str]:
         if not client: raise ValueError("Client is not available!")
         models = client.models.list()
         ai_check_error(models)
-        print_lg("Available models:")
-        print_lg(models.data, pretty=True)
+        # Do not dump the full OpenRouter/OpenAI catalog into the console.
+        count = len(models.data) if getattr(models, "data", None) is not None else 0
+        print_lg(f"Fetched {count} available model(s) from API (details omitted).")
         return models.data
     except Exception as e:
         critical_error_log("Error occurred while getting models list!", e)
@@ -160,7 +179,13 @@ def ai_completion(client: OpenAI, messages: list[dict], response_format: dict = 
     """
     if not client: raise ValueError("Client is not available!")
 
-    params = {"model": llm_model, "messages": messages, "stream": stream}
+    raise_if_stopped()
+    params = {
+        "model": llm_model,
+        "messages": messages,
+        "stream": stream,
+        "timeout": float(ai_request_timeout),
+    }
 
     if model_supports_temperature(llm_model):
         params["temperature"] = temperature
@@ -174,7 +199,13 @@ def ai_completion(client: OpenAI, messages: list[dict], response_format: dict = 
     # Log response
     if stream:
         print_lg("--STREAMING STARTED")
+        deadline = time.time() + float(ai_request_timeout)
         for chunk in completion:
+            raise_if_stopped()
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"AI stream exceeded ai_request_timeout={ai_request_timeout}s"
+                )
             ai_check_error(chunk)
             chunkMessage = chunk.choices[0].delta.content
             if chunkMessage != None:
@@ -182,6 +213,7 @@ def ai_completion(client: OpenAI, messages: list[dict], response_format: dict = 
             print_lg(chunkMessage, end="", flush=True)
         print_lg("\n--STREAMING COMPLETE")
     else:
+        raise_if_stopped()
         ai_check_error(completion)
         result = completion.choices[0].message.content
     
@@ -209,6 +241,8 @@ def ai_extract_skills(client: OpenAI, job_description: str, stream: bool = strea
         ##> ------ Dheeraj Deshwal : dheeraj20194@iiitd.ac.in/dheerajdeshwal9811@gmail.com - Bug fix ------
         return ai_completion(client, messages, response_format=extract_skills_response_format, stream=stream)
     ##<
+    except BotStopped:
+        raise
     except Exception as e:
         ai_error_alert(f"Error occurred while extracting skills from job description. {apiCheckInstructions}", e)
 
@@ -241,6 +275,13 @@ def ai_answer_question(
     try:
         prompt = ai_answer_prompt.format(user_information_all or "N/A", question)
          # Append optional details if provided
+        if options and (question_type in ['single_select', 'multiple_select']):
+            options_str = "OPTIONS:\n" + "\n".join([f"- {option}" for option in options])
+            prompt += f"\n\n{options_str}"
+            if question_type == 'single_select':
+                prompt += "\n\nSelect exactly ONE option from the list above. Copy the option text EXACTLY. Choose the option that maximizes interview chances."
+            else:
+                prompt += "\n\nYou may select MULTIPLE options if appropriate. Prefer favorable options that maximize interview chances."
         if job_description and job_description != "Unknown":
             prompt += f"\nJob Description:\n{job_description}"
         if about_company and about_company != "Unknown":
@@ -291,23 +332,38 @@ def ai_generate_coverletter(
 
 
 ##< Evaluation Agents
-def ai_evaluate_resume(
-    client: OpenAI, 
-    job_description: str, about_company: str, required_skills: dict,
-    resume: str,
-    stream: bool = stream_output
+def ai_score_jd_vs_resume(
+    client: OpenAI,
+    job_description: str,
+    resume_text: str,
+    stream: bool = False,
 ) -> dict | ValueError:
-    pass
-
-
-
-def ai_evaluate_resume(
-    client: OpenAI, 
-    job_description: str, about_company: str, required_skills: dict,
-    resume: str,
-    stream: bool = stream_output
-) -> dict | ValueError:
-    pass
+    """
+    Score how well resume_text matches job_description (0-100).
+    Uses the same OpenAI-compatible client / llm_api_key as other AI calls.
+    """
+    print_lg("-- SCORING JD vs RESUME")
+    try:
+        prompt = fill_resume_score_prompt(resume_text, job_description)
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            return ai_completion(
+                client,
+                messages,
+                response_format=resume_score_response_format,
+                stream=stream,
+            )
+        except Exception:
+            # Many OpenRouter / openai-like models reject json_schema; retry as plain text.
+            return ai_completion(client, messages, stream=stream)
+    except BotStopped:
+        raise
+    except Exception as e:
+        ai_error_alert(
+            f"Error occurred while scoring JD vs resume. {apiCheckInstructions}",
+            e,
+        )
+        return {"error": str(e)}
 
 
 

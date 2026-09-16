@@ -1,8 +1,12 @@
 ##> ------ Yang Li : MARKYangL - Feature ------
+import time
+
 from config.secrets import *
 from config.settings import showAiErrorAlerts
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
+from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, is_ai_enabled
+from modules.bot_control import BotStopped, raise_if_stopped
 
 from pyautogui import confirm
 from openai import OpenAI
@@ -17,7 +21,7 @@ def deepseek_create_client() -> OpenAI | None:
     '''
     try:
         print_lg("Creating DeepSeek client...")
-        if not use_AI:
+        if not is_ai_enabled():
             raise ValueError("AI is not enabled! Please enable it by setting `use_AI = True` in `secrets.py` in `config` folder.")
         
         ##> ------ Tim L : tulxoro - Refactor ------
@@ -28,7 +32,11 @@ def deepseek_create_client() -> OpenAI | None:
             base_url = base_url[:-1]
         
         # Create client with DeepSeek endpoint
-        client = OpenAI(base_url=base_url, api_key=llm_api_key)
+        client = OpenAI(
+            base_url=base_url,
+            api_key=llm_api_key,
+            timeout=float(ai_request_timeout),
+        )
         
         print_lg("---- SUCCESSFULLY CREATED DEEPSEEK CLIENT! ----")
         print_lg(f"Using API URL: {base_url}")
@@ -39,6 +47,9 @@ def deepseek_create_client() -> OpenAI | None:
         return client
     except Exception as e:
         error_message = f"Error occurred while creating DeepSeek client. Make sure your API connection details are correct."
+        if disable_ai_and_resume_on_rate_limit(f"{error_message} {e}", source="DeepSeek"):
+            critical_error_log(error_message, e)
+            return None
         critical_error_log(error_message, e)
         if showAiErrorAlerts:
             if "Pause AI error alerts" == confirm(f"{error_message}\n{str(e)}", "DeepSeek Connection Error", ["Pause AI error alerts", "Okay Continue"]):
@@ -68,14 +79,13 @@ def deepseek_completion(client: OpenAI, messages: list[dict], response_format: d
     if not client: 
         raise ValueError("DeepSeek client is not available!")
     ##> ------ Tim L : tulxoro - Improvement ------
+    raise_if_stopped()
     # Set up parameters for the API call
     params = {
-        
-        "model": llm_model, 
-   
-        "messages": messages, 
+        "model": llm_model,
+        "messages": messages,
         "stream": stream,
-        "timeout": 30  
+        "timeout": float(ai_request_timeout),
     }
     
     # Add temperature if supported
@@ -98,7 +108,13 @@ def deepseek_completion(client: OpenAI, messages: list[dict], response_format: d
         # Process the response
         if stream:
             print_lg("--STREAMING STARTED")
+            deadline = time.time() + float(ai_request_timeout)
             for chunk in completion:
+                raise_if_stopped()
+                if time.time() > deadline:
+                    raise TimeoutError(
+                        f"DeepSeek stream exceeded ai_request_timeout={ai_request_timeout}s"
+                    )
                 # Check for errors
                 if chunk.model_extra and chunk.model_extra.get("error"):
                     raise ValueError(f'Error occurred with DeepSeek API: "{chunk.model_extra.get("error")}"')
@@ -109,6 +125,7 @@ def deepseek_completion(client: OpenAI, messages: list[dict], response_format: d
                 print_lg(chunk_message, end="", flush=True)
             print_lg("\n--STREAMING COMPLETE")
         else:
+            raise_if_stopped()
             # Check for errors
             if completion.model_extra and completion.model_extra.get("error"):
                 raise ValueError(f'Error occurred with DeepSeek API: "{completion.model_extra.get("error")}"')
@@ -122,6 +139,8 @@ def deepseek_completion(client: OpenAI, messages: list[dict], response_format: d
         print_lg("\nDeepSeek Answer:\n")
         print_lg(result, pretty=response_format is not None)
         return result
+    except BotStopped:
+        raise
     except Exception as e:
         error_message = f"DeepSeek API error: {str(e)}"
         print_lg(f"Full error details: {e.__class__.__name__}: {str(e)}")
@@ -138,6 +157,7 @@ def deepseek_completion(client: OpenAI, messages: list[dict], response_format: d
             print_lg("The requested resource could not be found. The API URL or model name might be incorrect.")
         elif "429" in str(e):
             print_lg("You've exceeded the rate limit. Please wait before making more requests.")
+            disable_ai_and_resume_on_rate_limit(e, source="DeepSeek")
             
         raise ValueError(error_message)
 
@@ -208,9 +228,9 @@ def deepseek_answer_question(
             prompt += f"\n\n{options_str}"
             
             if question_type == 'single_select':
-                prompt += "\n\nPlease select exactly ONE option from the list above."
+                prompt += "\n\nPlease select exactly ONE option from the list above. Copy the option text EXACTLY. Choose the option that maximizes interview chances (prefer Yes/Willing/Have experience; never pick No just because profile data is missing)."
             else:
-                prompt += "\n\nYou may select MULTIPLE options from the list above if appropriate."
+                prompt += "\n\nYou may select MULTIPLE options from the list above if appropriate. Prefer favorable options that maximize interview chances."
         
         # Add job details for context if available
         if job_description:
@@ -233,4 +253,30 @@ def deepseek_answer_question(
     except Exception as e:
         critical_error_log("Error occurred while answering question with DeepSeek!", e)
         return {"error": str(e)}
-##< 
+##<
+
+
+def deepseek_score_jd_vs_resume(
+    client: OpenAI,
+    job_description: str,
+    resume_text: str,
+    stream: bool = False,
+) -> dict | str:
+    '''Score JD vs resume (0-100) using the same DeepSeek client / llm_api_key.'''
+    try:
+        print_lg("-- SCORING JD vs RESUME (DeepSeek)")
+        prompt = fill_resume_score_prompt(resume_text, job_description)
+        messages = [{"role": "user", "content": prompt}]
+        result = deepseek_completion(
+            client=client,
+            messages=messages,
+            response_format={"type": "json_object"},
+            stream=stream,
+        )
+        if isinstance(result, str):
+            result = convert_to_json(result)
+        return result
+    except Exception as e:
+        disable_ai_and_resume_on_rate_limit(e, source="DeepSeek scoring")
+        critical_error_log("Error occurred while scoring JD vs resume with DeepSeek!", e)
+        return {"error": str(e)}

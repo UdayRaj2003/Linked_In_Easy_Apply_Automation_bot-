@@ -100,7 +100,10 @@ def validate_questions() -> None | ValueError | TypeError:
 
     check_boolean(pause_before_submit, "pause_before_submit")
     check_boolean(pause_at_failed_question, "pause_at_failed_question")
+    check_int(failed_question_timeout_minutes, "failed_question_timeout_minutes", min_value=1)
     check_boolean(overwrite_previous_answers, "overwrite_previous_answers")
+    check_boolean(save_and_reuse_answers, "save_and_reuse_answers")
+    check_string(saved_answers_path, "saved_answers_path")
 
 
 from config.search import *
@@ -115,6 +118,20 @@ def validate_search() -> None | ValueError | TypeError:
     check_string(search_location, "search_location")
     check_int(switch_number, "switch_number", 1)
     check_boolean(randomize_search_order, "randomize_search_order")
+
+    check_string(search_actively_hiring, "search_actively_hiring", ["true", "false", ""])
+    check_string(search_experience_levels, "search_experience_levels")
+    if search_experience_levels.strip():
+        parts = [p.strip() for p in search_experience_levels.split(",") if p.strip()]
+        if not parts or any(not p.isdigit() for p in parts):
+            raise ValueError(
+                'Invalid input for search_experience_levels. Expecting a comma-separated digit string '
+                'like "1,2,3" (or "" to omit).'
+            )
+    check_string(search_time_posted, "search_time_posted", min_length=1)
+    check_string(search_geo_id, "search_geo_id", min_length=1)
+    check_string(search_sort_order, "search_sort_order", min_length=1)
+    check_string(search_origin, "search_origin", min_length=1)
 
     check_string(sort_by, "sort_by", ["", "Most recent", "Most relevant"])
     check_string(date_posted, "date_posted", ["", "Any time", "Past month", "Past week", "Past 24 hours"])
@@ -166,6 +183,8 @@ def validate_secrets() -> None | ValueError | TypeError:
     check_string(llm_api_key, "llm_api_key")
     # check_string(llm_embedding_model, "llm_embedding_model")
     check_boolean(stream_output, "stream_output")
+    check_int(ai_request_timeout, "ai_request_timeout", min_value=5)
+    check_boolean(extract_job_skills_with_ai, "extract_job_skills_with_ai")
     
     ##> ------ Yang Li : MARKYangL - Feature ------
     # Validate DeepSeek configuration
@@ -199,8 +218,44 @@ def validate_settings() -> None | ValueError | TypeError:
     check_boolean(alternate_sortby, "alternate_sortby")
     check_boolean(cycle_date_posted, "cycle_date_posted")
     check_boolean(stop_date_cycle_at_24hr, "stop_date_cycle_at_24hr")
+    check_int(max_dead_cycles, "max_dead_cycles", min_value=0)
+    check_boolean(recent_job_feature_enabled, "recent_job_feature_enabled")
+    check_int(recent_job_max_age_minutes, "recent_job_max_age_minutes", min_value=0)
+    check_int(recent_job_default_age_minutes, "recent_job_default_age_minutes", min_value=0)
+    check_int(daily_limit_pause_hours, "daily_limit_pause_hours", min_value=1)
     
     # check_string(generated_resume_path, "generated_resume_path", min_length=1)
+
+    check_boolean(use_resume_engine, "use_resume_engine")
+    check_string(resume_engine_root, "resume_engine_root", min_length=1)
+    check_int(resume_generation_timeout, "resume_generation_timeout", 1)
+    check_int(min_jd_chars, "min_jd_chars", 1)
+    check_boolean(use_resume_score_gate, "use_resume_score_gate")
+    check_int(resume_score_threshold, "resume_score_threshold", 0)
+    if resume_score_threshold > 100:
+        raise ValueError(
+            'Invalid input for resume_score_threshold. Expecting an Integer from 0 to 100 '
+            f'(e.g. 70), not `{resume_score_threshold}`.'
+        )
+    check_boolean(use_jd_email_outreach, "use_jd_email_outreach")
+    check_string(ai_outreach_root, "ai_outreach_root", min_length=1)
+    if use_resume_engine:
+        from pathlib import Path
+        linkedin_dir = Path(__file__).resolve().parent.parent
+        engine_root = Path(resume_engine_root)
+        if not engine_root.is_absolute():
+            engine_root = (linkedin_dir / engine_root).resolve()
+        if not engine_root.is_dir():
+            raise ValueError(
+                f'resume_engine_root "{resume_engine_root}" does not exist or is not a directory.\n'
+                f'Resolved to: "{engine_root}"\n'
+                f'Open config/settings.py and point resume_engine_root at the RenderCv project root.'
+            )
+        if not (engine_root / "resume_engine").is_dir():
+            raise ValueError(
+                f'resume_engine_root "{engine_root}" does not contain a resume_engine/ package.\n'
+                f'Open config/settings.py and update resume_engine_root.'
+            )
 
     check_string(file_name, "file_name", min_length=1)
     check_string(failed_file_name, "failed_file_name", min_length=1)
@@ -214,6 +269,16 @@ def validate_settings() -> None | ValueError | TypeError:
     check_boolean(smooth_scroll, "smooth_scroll")
     check_boolean(keep_screen_awake, "keep_screen_awake")
     check_boolean(stealth_mode, "stealth_mode")
+    check_boolean(show_stop_button, "show_stop_button")
+    check_boolean(block_on_filter_error, "block_on_filter_error")
+    check_boolean(block_on_ai_errors, "block_on_ai_errors")
+    check_boolean(block_on_failed_logging, "block_on_failed_logging")
+    check_boolean(block_on_missing_resume, "block_on_missing_resume")
+    check_boolean(block_on_login_prompts, "block_on_login_prompts")
+    check_boolean(block_on_critical_error, "block_on_critical_error")
+    check_boolean(block_on_exit_summary, "block_on_exit_summary")
+    check_boolean(block_on_chrome_open_error, "block_on_chrome_open_error")
+    check_boolean(showAiErrorAlerts, "showAiErrorAlerts")
 
 
 

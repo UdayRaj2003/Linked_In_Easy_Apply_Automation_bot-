@@ -1,5 +1,62 @@
 # LinkedIn AI Auto Job Applier 🤖
-This is an web scraping bot that automates the process of job applications on LinkedIn. It searches for jobs relevant to you, answers all questions in application form, customizes your resume based on the collected job information, such as skills required, description, about company, etc. and applies to the job. Can apply 100+ jobs in less than 1 hour. 
+This is an web scraping bot that automates the process of job applications on LinkedIn. It searches for jobs relevant to you, answers all questions in application form, customizes your resume based on the collected job information, such as skills required, description, about company, etc. and applies to the job. Can apply 100+ jobs in less than 1 hour.
+
+## This fork (Linkedin_Test)
+
+Run from this folder:
+
+```
+python runAiBot.py
+```
+
+Stop with the **STOP BOT** window, `Ctrl+Shift+Q`, or by moving the mouse to the top-left corner.
+
+### Config files
+
+| File | What to set |
+|---|---|
+| `config/personals.py` | Name, phone, address, demographics |
+| `config/questions.py` | Easy Apply answers, `default_resume_path`, `user_information_all` (used for resume scoring) |
+| `config/search.py` | `search_terms` plus URL params (`search_time_posted`, `search_geo_id`, `search_experience_levels`, etc.) |
+| `config/secrets.py` | LinkedIn login, `use_AI`, OpenRouter/OpenAI `llm_api_key` / `llm_model` |
+| `config/settings.py` | Chrome/safe mode, resume engine, score gate, JD email outreach |
+
+Search uses a **built jobs URL** (not the old All-filters UI). Resume Engine lives at `resume_engine_root` (default `../RenderCv`).
+
+### Resume score gate (`config/settings.py`)
+
+After existing eligibility (blacklist, recent-job age, bad words, clearance, years of experience), the bot can score JD vs `user_information_all` using the **same AI key** as `config/secrets.py`.
+
+- `use_resume_score_gate = True` / `False`
+- `resume_score_threshold = 70` (0–100)
+
+Below threshold: skip apply, do not generate a tailored resume.
+
+### JD email outreach (local AI_Outreach, not HTTP)
+
+After a job passes those checks **and** a resume PDF is resolved (tailored file, or `default_resume_path` if generation fails), the bot looks for emails in the raw JD. If at least one valid email is found, it starts a background thread:
+
+```python
+send_outreach(jd=job_description, resume_path=resolved_pdf)
+```
+
+Easy Apply continues immediately. Outreach never uses Telegram `.env` or `POST /generate` / `POST /send`.
+
+- `use_jd_email_outreach = True` / `False`
+- `ai_outreach_root = r"D:\Test_all_job_bot\Python_Scrapper_Telegram\AI_Outreach"`
+
+Setup once:
+
+```
+pip install -r D:\Test_all_job_bot\Python_Scrapper_Telegram\AI_Outreach\requirements.txt
+```
+
+Copy `AI_Outreach\.env.example` → `AI_Outreach\.env` and fill `GMAIL_EMAIL`, `GMAIL_APP_PASSWORD`, `OPENROUTER_API_KEY`, `DEFAULT_RESUME_PATH`, `SENDER_NAME` / `SENDER_EMAIL`, `OPENROUTER_MODEL`.
+
+### History CSV
+
+Successful applies are appended to `all excels/all_applied_applications_history.csv`. The **Resume** column stores the **full PDF path** used for that job (not only the filename).
+
 
 
 ## 📽️ See it in Action
@@ -8,6 +65,7 @@ Click on above image to watch the demo or use this link https://youtu.be/gMbB1fW
 
 
 ## ✨ Content
+- [This fork](#this-fork-linkedin_test)
 - [Introduction](#linkedin-ai-auto-job-applier-)
 - [Demo Video](#%EF%B8%8F-see-it-in-action)
 - [Index](#-content)
@@ -32,6 +90,7 @@ Click on above image to watch the tutorial for installation and configuration or
 2. Install necessary [Undetected Chromedriver](https://pypi.org/project/undetected-chromedriver/), [PyAutoGUI](https://pypi.org/project/PyAutoGUI/) and [Setuptools](https://pypi.org/project/setuptools/) packages. After Python is installed, OPEN a console/terminal or shell, Use below command that uses the [pip](https://pip.pypa.io/en/stable) command-line tool to install these 3 package.
   ```
   pip install undetected-chromedriver pyautogui setuptools openai flask-cors flask
+  pip install -r D:\Test_all_job_bot\Python_Scrapper_Telegram\AI_Outreach\requirements.txt
   ```
 3. Download and install latest version of [Google Chrome](https://www.google.com/chrome) in it's default location, visit https://www.google.com/chrome to download it's installer.
 4. Clone the current git repo or download it as a zip file, url to the latest update https://github.com/GodsScion/Auto_job_applier_linkedIn.
@@ -53,9 +112,9 @@ Click on above image to watch the tutorial for installation and configuration or
 4. Open `secrets.py` file in `/config` folder and enter your LinkedIn username, password to login and OpenAI API Key for generation of job tailored resumes and cover letters (This entire step is optional). If you do not provide username or password or leave them as default, it will login with saved profile in browser, if failed will ask you to login manually.
 5. Open `settings.py` file in `/config` folder to configure the bot settings like, keep screen awake, click intervals (click intervals are randomized to seem like human behavior), run in background, stealth mode (to avoid bot detection), etc. as per your needs.
 6. (Optional) Don't forget to add you default resume in the location you mentioned in `default_resume_path = "all resumes/default/resume.pdf"` given in `/config/questions.py`. If one is not provided, it will use your previous resume submitted in LinkedIn or (In Development) generate custom resume if OpenAI APT key is provided!
-7. Run `runAiBot.py` and see the magic happen.
+7. Run `python runAiBot.py` from this project folder.
 8. To run the Applied Jobs history UI, run `app.py` and open web browser on `http://localhost:5000`.
-8. If you have questions or need help setting it up or to talk in general, join the github server: https://discord.gg/fFp7uUzWCY
+9. If you have questions or need help setting it up or to talk in general, join the github server: https://discord.gg/fFp7uUzWCY
 
 [back to index](#-content)
 

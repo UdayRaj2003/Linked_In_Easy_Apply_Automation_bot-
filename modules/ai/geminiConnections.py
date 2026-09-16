@@ -3,6 +3,7 @@ from config.secrets import llm_model, llm_api_key
 from config.settings import showAiErrorAlerts
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
+from modules.ai_runtime import disable_ai_and_resume_on_rate_limit
 from pyautogui import confirm
 from typing import Literal
 
@@ -49,6 +50,9 @@ def gemini_create_client():
         return model
     except Exception as e:
         error_message = f"Error occurred while configuring Gemini client. Make sure your API key and model name are correct."
+        if disable_ai_and_resume_on_rate_limit(f"{error_message} {e}", source="Gemini"):
+            critical_error_log(error_message, e)
+            return None
         critical_error_log(error_message, e)
         if showAiErrorAlerts:
             if "Pause AI error alerts" == confirm(f"{error_message}\n{str(e)}", "Gemini Connection Error", ["Pause AI error alerts", "Okay Continue"]):
@@ -109,6 +113,7 @@ def gemini_completion(model, prompt: str, is_json: bool = False) -> dict | str:
         
         return result
     except Exception as e:
+        disable_ai_and_resume_on_rate_limit(e, source="Gemini")
         critical_error_log(f"Error occurred while getting Gemini completion!", e)
         return {"error": str(e)}
 
@@ -124,6 +129,7 @@ def gemini_extract_skills(model, job_description: str) -> list[str] | None:
         prompt = extract_skills_prompt.format(job_description) + "\n\nImportant: Respond with only the JSON object, without any markdown formatting or other text."
         return gemini_completion(model, prompt, is_json=True)
     except Exception as e:
+        disable_ai_and_resume_on_rate_limit(e, source="Gemini")
         critical_error_log("Error occurred while extracting skills with Gemini!", e)
         return {"error": str(e)}
 
@@ -145,9 +151,9 @@ def gemini_answer_question(
             options_str = "OPTIONS:\n" + "\n".join([f"- {option}" for option in options])
             prompt += f"\n\n{options_str}"
             if question_type == 'single_select':
-                prompt += "\n\nPlease select exactly ONE option from the list above."
+                prompt += "\n\nPlease select exactly ONE option from the list above. Copy the option text EXACTLY. Choose the option that maximizes interview chances (prefer Yes/Willing/Have experience; never pick No just because profile data is missing)."
             else:
-                prompt += "\n\nYou may select MULTIPLE options from the list above if appropriate."
+                prompt += "\n\nYou may select MULTIPLE options from the list above if appropriate. Prefer favorable options that maximize interview chances."
         
         if job_description:
             prompt += f"\n\nJOB DESCRIPTION:\n{job_description}"
@@ -157,5 +163,26 @@ def gemini_answer_question(
 
         return gemini_completion(model, prompt)
     except Exception as e:
+        disable_ai_and_resume_on_rate_limit(e, source="Gemini")
         critical_error_log("Error occurred while answering question with Gemini!", e)
         return {"error": str(e)}
+
+
+def gemini_score_jd_vs_resume(
+    model,
+    job_description: str,
+    resume_text: str,
+) -> dict | str:
+    """Score JD vs resume (0-100) using the same Gemini client / llm_api_key."""
+    try:
+        print_lg("-- SCORING JD vs RESUME (Gemini)")
+        prompt = (
+            fill_resume_score_prompt(resume_text, job_description)
+            + "\n\nImportant: Respond with only the JSON object, without markdown."
+        )
+        return gemini_completion(model, prompt, is_json=True)
+    except Exception as e:
+        disable_ai_and_resume_on_rate_limit(e, source="Gemini scoring")
+        critical_error_log("Error occurred while scoring JD vs resume with Gemini!", e)
+        return {"error": str(e)}
+

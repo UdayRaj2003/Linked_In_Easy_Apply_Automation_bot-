@@ -10,5 +10,6 @@ old
 
 secrets.py
 config/personals.py
+config/saved_answers.json
 .venv
 apikeys.py

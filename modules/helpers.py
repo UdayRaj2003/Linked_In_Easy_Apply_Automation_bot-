@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from pyautogui import alert
 from pprint import pprint
 
-from config.settings import logs_folder_path
+from config.settings import logs_folder_path, block_on_failed_logging, block_on_login_prompts
 
 
 
@@ -59,9 +59,10 @@ def make_directories(paths: list[str]) -> None:
 
 def get_default_temp_profile() -> str:
     # Thanks to https://github.com/vinodbavage31 for suggestion!
+    # Returns only the profile directory path (NOT a Chrome CLI flag).
     home = pathlib.Path.home()
     if sys.platform.startswith('win'):
-        return "--user-data-dir=C:\\temp\\auto-job-apply-profile"
+        return r"C:\temp\auto-job-apply-profile"
     elif sys.platform.startswith('linux'):
         return str(home / ".auto-job-apply-profile")
     return str(home / "Library" / "Application Support" / "Google" / "Chrome" / "auto-job-apply-profile")
@@ -141,7 +142,9 @@ def print_lg(*msgs: str | dict, end: str = "\n", pretty: bool = False, flush: bo
                 file.write(str(message) + end)
     except Exception as e:
         trail = f'Skipped saving this message: "{message}" to log.txt!' if from_critical else "We'll try one more time to log..."
-        alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
+        print(f'log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}')
+        if block_on_failed_logging:
+            alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
         if not from_critical:
             critical_error_log("Log.txt is open or is occupied by another program!", e)
 #>
@@ -168,12 +171,22 @@ def buffer(speed: int=0) -> None:
 
 def manual_login_retry(is_logged_in: callable, limit: int = 2) -> None:
     '''
-    Function to ask and validate manual login
+    Function to ask and validate manual login.
+    When block_on_login_prompts is False, polls without a blocking dialog.
     '''
     count = 0
     while not is_logged_in():
-        from pyautogui import alert
         print_lg("Seems like you're not logged in!")
+        if not block_on_login_prompts:
+            # Non-blocking: wait up to ~2 minutes for login, then continue
+            for _ in range(60):
+                if is_logged_in():
+                    return
+                print_lg("Waiting for LinkedIn login (non-blocking)...")
+                sleep(2)
+            print_lg("Login not confirmed after wait; continuing anyway.")
+            return
+        from pyautogui import alert
         button = "Confirm Login"
         message = 'After you successfully Log In, please click "{}" button below.'.format(button)
         if count > limit:
@@ -231,6 +244,81 @@ def calculate_date_posted(time_string: str) -> datetime | None | ValueError:
     # If regex doesn't match, or parsing failed, return None.
     # This will skip jobs where the date can't be determined, preventing crashes.
     return None
+
+
+def parse_job_age_minutes(time_posted_text: str | None) -> int | None:
+    '''
+    Convert LinkedIn posted-time text to age in minutes.
+    Returns None when the text cannot be reliably parsed (caller should use
+    config recent_job_default_age_minutes).
+    '''
+    import re
+    if time_posted_text is None:
+        return None
+    text = str(time_posted_text).strip()
+    if not text:
+        return None
+    # LinkedIn often prefixes with Reposted
+    text = re.sub(r'(?i)\breposted\b', '', text).strip()
+    text = re.sub(r'\s+', ' ', text)
+    low = text.lower()
+
+    if low in ("just now", "now") or low.startswith("just now"):
+        return 0
+    if re.search(r'\ba\s+few\s+seconds?\s+ago\b', low):
+        return 0
+    if re.search(r'\ba\s+minute\s+ago\b', low):
+        return 1
+    if re.search(r'\ban?\s+hour\s+ago\b', low):
+        return 60
+
+    match = re.search(
+        r'(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago',
+        low,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    try:
+        value = int(match.group(1))
+        unit = match.group(2).lower()
+    except (ValueError, IndexError):
+        return None
+
+    if 'second' in unit:
+        return max(0, value // 60)
+    if 'minute' in unit:
+        return value
+    if 'hour' in unit:
+        return value * 60
+    if 'day' in unit:
+        return value * 1440
+    if 'week' in unit:
+        return value * 10080
+    if 'month' in unit:
+        return value * 43200  # 30-day approx
+    if 'year' in unit:
+        return value * 525600  # 365-day approx
+    return None
+
+
+def is_within_recent_job_window(
+    job_age_minutes: int,
+    *,
+    enabled: bool,
+    max_age_minutes: int,
+) -> bool:
+    '''
+    Recent-job feature gate.
+    - enabled False → always True (apply; feature inactive)
+    - enabled True → True only if job_age_minutes <= max_age_minutes
+    '''
+    if not enabled:
+        return True
+    try:
+        return int(job_age_minutes) <= int(max_age_minutes)
+    except (TypeError, ValueError):
+        return True
 
 
 def convert_to_lakhs(value: str) -> str:

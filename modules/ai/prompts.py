@@ -108,24 +108,79 @@ Response schema for `extract_skills` function
 """
 #<
 
+
+##> JD vs Resume Score
+
+resume_score_prompt = """
+You are a strict resume-to-job-description matcher.
+
+Score how well the CANDIDATE RESUME fits this JOB DESCRIPTION on a scale of 0 to 100.
+- 0-40: poor fit (wrong domain, missing core required skills)
+- 41-69: partial fit (some overlap, notable gaps)
+- 70-100: strong fit (core skills and experience align)
+
+Use only information in the resume. Do not invent experience.
+Return ONLY a JSON object with no extra text:
+{"score": <integer 0-100>}
+
+CANDIDATE RESUME:
+<<<RESUME>>>
+
+JOB DESCRIPTION:
+<<<JD>>>
+"""
+"""
+Use `fill_resume_score_prompt(resume_text, job_description)`.
+"""
+
+
+def fill_resume_score_prompt(resume_text: str, job_description: str) -> str:
+    return resume_score_prompt.replace("<<<RESUME>>>", resume_text or "").replace(
+        "<<<JD>>>", job_description or ""
+    )
+
+resume_score_response_format = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "Resume_Score_Response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "score": {"type": "integer"},
+            },
+            "required": ["score"],
+            "additionalProperties": False,
+        },
+    },
+}
+"""
+Response schema for JD vs resume scoring.
+"""
+#<
+
 ##> ------ Dheeraj Deshwal : dheeraj9811 Email:dheeraj20194@iiitd.ac.in/dheerajdeshwal9811@gmail.com - Feature ------
 ##> Answer Questions
 # Structure of messages = `[{"role": "user", "content": answer_questions_prompt}]`
 
 ai_answer_prompt = """
-You are an intelligent AI assistant filling out a form and answer like human,. 
-Respond concisely based on the type of question:
+You are filling a LinkedIn Easy Apply job application form for the candidate.
+Your #1 goal: maximize the chance of getting an interview / passing screening.
 
-1. If the question asks for **years of experience, duration, or numeric value**, return **only a number** (e.g., "2", "5", "10").
-2. If the question is **a Yes/No question**, return **only "Yes" or "No"**.
-3. If the question requires a **short description**, give a **single-sentence response**.
-4. If the question requires a **detailed response**, provide a **well-structured and human-like answer and keep no of character <350 for answering**.
-5. Do **not** repeat the question in your answer.
-6. here is user information to answer the questions if needed:
-**User Information:** 
+STRICT RULES:
+1. Always choose the MOST FAVORABLE option for being selected (interview-first mindset).
+2. For Yes/No questions about skills, tools, experience, willingness, eligibility to work, relocation, shifts, assessments, background checks you can pass, etc.: answer **Yes** (or the positive/agree option) unless the user info clearly requires otherwise for legal identity fields.
+3. NEVER answer **No** just because the user profile does not mention that skill/tool/experience. Assume the candidate can learn quickly after getting selected. Prefer Yes / Have experience / Willing / Agree.
+4. If options are given, you MUST pick exactly one option from the provided list (copy the option text EXACTLY). Prefer the option that best passes filters (e.g. required experience met, authorized, willing, proficient).
+5. If the question asks for **years of experience** with a skill and user info is unclear, give a plausible positive number that still looks realistic for an entry/junior profile (usually 1). Return **only the number**.
+6. For salary/notice/personal identity (name, email, phone, gender, disability, veteran, citizenship) follow User Information when present; do not invent a different identity.
+7. Short description → one strong sentence. Detailed response → human-like, under 350 characters, confident and relevant to the job.
+8. Do **not** repeat the question. Do **not** add explanations, quotes, or markdown — return ONLY the final answer value.
+
+**User Information:**
 {}
 
-**QUESTION Strat from here:**  
+**QUESTION:**
 {}
 """
 #<
