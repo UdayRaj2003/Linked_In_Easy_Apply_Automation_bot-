@@ -43,7 +43,7 @@ Leave a value as "" to omit that query parameter (except keywords/origin/sortBy/
 '''
 search_actively_hiring = "true"                    # f_AL: Easy Apply : "true", "false", or "" to omit
 search_experience_levels = "2,3"                 # f_E: comma-separated experience codes
-search_time_posted = "r1800"                        # f_TPR: LinkedIn often uses r86400 for past 24 hours
+search_time_posted = "r86400"                        # f_TPR: LinkedIn often uses r86400 for past 24 hours
 search_geo_id = "102713980"                        # geoId (India)
 search_sort_order = "DD"                           # sortBy: "DD" (Most recent) or "R" (Most relevant)
 search_origin = "JOB_SEARCH_PAGE_JOB_FILTER"       # origin
@@ -126,7 +126,8 @@ pause_after_filters = False           # True or False, Note: True or False are c
 about_company_bad_words = [
     "Crossover",
     "Scoutit",
-    "Mindrift"
+    "Mindrift",
+    "HRM Counsel",
 ]
 
 # Skip checking for `about_company_bad_words` for these companies if they have these good words in their 'About Company' section...
@@ -140,8 +141,7 @@ about_company_good_words = [
 
 # Avoid applying to these companies if they have these bad words in their 'Job Description' section...
 bad_words = [
-    "unpaid",
-    "intern",
+    "unpaid", 
     "US Citizen",
     "USA Citizen",
     "Security Clearance",
@@ -166,4 +166,4 @@ did_masters = False
 
 # Avoid applying to jobs if their required experience is above your current_experience.
 # Set value as -1 if you want to apply to all jobs regardless of experience requirement.
-current_experience = 1
+current_experience = 2

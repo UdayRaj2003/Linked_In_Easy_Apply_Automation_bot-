@@ -5,7 +5,8 @@ from config.secrets import *
 from config.settings import showAiErrorAlerts
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
-from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, is_ai_enabled
+from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, is_ai_enabled, try_rotate_ai_key
+from modules.ai_keys import apply_key_to_client, current_api_key, current_key_label, key_count
 from modules.bot_control import BotStopped, raise_if_stopped
 
 from pyautogui import confirm
@@ -34,7 +35,7 @@ def deepseek_create_client() -> OpenAI | None:
         # Create client with DeepSeek endpoint
         client = OpenAI(
             base_url=base_url,
-            api_key=llm_api_key,
+            api_key=current_api_key() or llm_api_key,
             timeout=float(ai_request_timeout),
         )
         
@@ -78,88 +79,72 @@ def deepseek_completion(client: OpenAI, messages: list[dict], response_format: d
     '''
     if not client: 
         raise ValueError("DeepSeek client is not available!")
-    ##> ------ Tim L : tulxoro - Improvement ------
-    raise_if_stopped()
-    # Set up parameters for the API call
-    params = {
-        "model": llm_model,
-        "messages": messages,
-        "stream": stream,
-        "timeout": float(ai_request_timeout),
-    }
     
-    # Add temperature if supported
-    if deepseek_model_supports_temperature(llm_model):
-        params["temperature"] = temperature
-
-    # Add response format if needed (DeepSeek uses OpenAI-compatible API)
-    if response_format:
-        params["response_format"] = response_format
-
-    try:
-        # Make the API call
-        print_lg(f"Calling DeepSeek API for completion...")
-        print_lg(f"Using model: {llm_model}")
-        print_lg(f"Message count: {len(messages)}")
-        completion = client.chat.completions.create(**params)
-    ##<
-        result = ""
+    raise_if_stopped()
+    last_error = None
+    attempts = max(1, key_count() or 1)
+    for attempt in range(attempts):
+        apply_key_to_client(client)
+        params = {
+            "model": llm_model,
+            "messages": messages,
+            "stream": stream,
+            "timeout": float(ai_request_timeout),
+        }
         
-        # Process the response
-        if stream:
-            print_lg("--STREAMING STARTED")
-            deadline = time.time() + float(ai_request_timeout)
-            for chunk in completion:
-                raise_if_stopped()
-                if time.time() > deadline:
-                    raise TimeoutError(
-                        f"DeepSeek stream exceeded ai_request_timeout={ai_request_timeout}s"
-                    )
-                # Check for errors
-                if chunk.model_extra and chunk.model_extra.get("error"):
-                    raise ValueError(f'Error occurred with DeepSeek API: "{chunk.model_extra.get("error")}"')
-                
-                chunk_message = chunk.choices[0].delta.content
-                if chunk_message is not None:
-                    result += chunk_message
-                print_lg(chunk_message, end="", flush=True)
-            print_lg("\n--STREAMING COMPLETE")
-        else:
-            raise_if_stopped()
-            # Check for errors
-            if completion.model_extra and completion.model_extra.get("error"):
-                raise ValueError(f'Error occurred with DeepSeek API: "{completion.model_extra.get("error")}"')
-            
-            result = completion.choices[0].message.content
-        
-        # Convert to JSON if needed
+        if deepseek_model_supports_temperature(llm_model):
+            params["temperature"] = temperature
+
         if response_format:
-            result = convert_to_json(result)
-        
-        print_lg("\nDeepSeek Answer:\n")
-        print_lg(result, pretty=response_format is not None)
-        return result
-    except BotStopped:
-        raise
-    except Exception as e:
-        error_message = f"DeepSeek API error: {str(e)}"
-        print_lg(f"Full error details: {e.__class__.__name__}: {str(e)}")
-        if hasattr(e, 'response'):
-            print_lg(f"Response data: {e.response.text if hasattr(e.response, 'text') else e.response}")
+            params["response_format"] = response_format
+
+        try:
+            print_lg(f"Calling DeepSeek API for completion...")
+            print_lg(f"Using model: {llm_model}")
+            print_lg(f"Message count: {len(messages)}")
+            completion = client.chat.completions.create(**params)
             
-        # If it's a connection or authentication error, provide more specific guidance
-        if "Connection" in str(e):
-            print_lg("This might be a network issue. Please check your internet connection.")
-            print_lg("If you're behind a firewall or proxy, make sure it allows connections to DeepSeek API.")
-        elif "401" in str(e):
-            print_lg("This appears to be an authentication error. Your API key might be invalid or expired.")
-        elif "404" in str(e):
-            print_lg("The requested resource could not be found. The API URL or model name might be incorrect.")
-        elif "429" in str(e):
-            print_lg("You've exceeded the rate limit. Please wait before making more requests.")
-            disable_ai_and_resume_on_rate_limit(e, source="DeepSeek")
+            result = ""
+            if stream:
+                print_lg("--STREAMING STARTED")
+                deadline = time.time() + float(ai_request_timeout)
+                for chunk in completion:
+                    raise_if_stopped()
+                    if time.time() > deadline:
+                        raise TimeoutError(
+                            f"DeepSeek stream exceeded ai_request_timeout={ai_request_timeout}s"
+                        )
+                    if chunk.model_extra and chunk.model_extra.get("error"):
+                        raise ValueError(f'Error occurred with DeepSeek API: "{chunk.model_extra.get("error")}"')
+                    chunk_message = chunk.choices[0].delta.content
+                    if chunk_message is not None:
+                        result += chunk_message
+                    print_lg(chunk_message, end="", flush=True)
+                print_lg("\n--STREAMING COMPLETE")
+            else:
+                raise_if_stopped()
+                if completion.model_extra and completion.model_extra.get("error"):
+                    raise ValueError(f'Error occurred with DeepSeek API: "{completion.model_extra.get("error")}"')
+                result = completion.choices[0].message.content
             
-        raise ValueError(error_message)
+            if response_format:
+                result = convert_to_json(result)
+            
+            print_lg("\nDeepSeek Answer:\n")
+            print_lg(result, pretty=response_format is not None)
+            return result
+        except BotStopped:
+            raise
+        except Exception as e:
+            last_error = e
+            if try_rotate_ai_key(e, source="DeepSeek AI"):
+                print_lg(f"Retrying DeepSeek AI call with API key {current_key_label()}...")
+                continue
+            raise
+    if last_error:
+        raise last_error
+    raise ValueError("DeepSeek AI completion failed with no remaining API keys.")
+
 
 def deepseek_extract_skills(client: OpenAI, job_description: str, stream: bool = stream_output) -> dict | ValueError:
     '''

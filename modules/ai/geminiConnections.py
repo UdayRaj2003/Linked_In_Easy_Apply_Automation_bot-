@@ -1,9 +1,18 @@
-import google.generativeai as genai
+'''
+Google Gemini AI helpers for LinkedIn Easy Apply.
+'''
+
+try:
+    import google.generativeai as genai
+except ImportError:  # pragma: no cover
+    genai = None  # type: ignore
+
 from config.secrets import llm_model, llm_api_key
 from config.settings import showAiErrorAlerts
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
-from modules.ai_runtime import disable_ai_and_resume_on_rate_limit
+from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, try_rotate_ai_key
+from modules.ai_keys import current_api_key, current_key_label, key_count
 from pyautogui import confirm
 from typing import Literal
 
@@ -12,6 +21,11 @@ def gemini_get_models_list():
     Lists available Gemini models that support content generation.
     """
     try:
+        if genai is None:
+            raise ImportError(
+                "google-generativeai is not installed. "
+                "pip install google-generativeai  (or switch ai_provider away from gemini)"
+            )
         print_lg("Getting Gemini models list...")
         models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         print_lg("Available models:")
@@ -29,10 +43,16 @@ def gemini_create_client():
     """
     try:
         print_lg("Configuring Gemini client...")
-        if not llm_api_key or "YOUR_API_KEY" in llm_api_key:
+        if genai is None:
+            raise ImportError(
+                "google-generativeai is not installed. "
+                "pip install google-generativeai  (or switch ai_provider away from gemini)"
+            )
+        key = current_api_key() or llm_api_key
+        if not key or "YOUR_API_KEY" in key:
             raise ValueError("Gemini API key is not set. Please set it in `config/secrets.py`.")
         
-        genai.configure(api_key=llm_api_key)
+        genai.configure(api_key=key)
         
         models = gemini_get_models_list()
         if "error" in models:
@@ -44,6 +64,7 @@ def gemini_create_client():
         
         print_lg("---- SUCCESSFULLY CONFIGURED GEMINI CLIENT! ----")
         print_lg(f"Using Model: {llm_model}")
+        print_lg(f"API keys configured: {key_count()} (using {current_key_label()})")
         print_lg("Check './config/secrets.py' for more details.\n")
         print_lg("---------------------------------------------")
         
@@ -61,7 +82,7 @@ def gemini_create_client():
 
 def gemini_completion(model, prompt: str, is_json: bool = False) -> dict | str:
     """
-    Generates content using the Gemini model.
+    Generates content using the Gemini model with API key rotation on error.
     * Takes in `model` - The Gemini model object.
     * Takes in `prompt` of type `str` - The prompt to send to the model.
     * Takes in `is_json` of type `bool` - Whether to expect a JSON response.
@@ -70,52 +91,51 @@ def gemini_completion(model, prompt: str, is_json: bool = False) -> dict | str:
     if not model:
         raise ValueError("Gemini client is not available!")
 
-    try:
-        # The Gemini API has a 'safety_settings' parameter to control content filtering.
-        # For a job application helper, it's generally safe to set these to a less restrictive level
-        # to avoid blocking legitimate content from resumes or job descriptions.
-        safety_settings = [
-            {
-                "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE",
-            },
-            {
-                "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE",
-            },
-            {
-                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE",
-            },
-            {
-                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE",
-            },
-        ]
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
 
-        print_lg(f"Calling Gemini API for completion...")
-        response = model.generate_content(prompt, safety_settings=safety_settings)
-        
-        # The response might be blocked. Check for that.
-        if not response.parts:
-             raise ValueError("The response from the Gemini API was empty. This might be due to the safety filters blocking the prompt or the response. The prompt was:\n" + prompt)
-
-        result = response.text
-
-        if is_json:
-            # Clean the response to remove Markdown formatting
-            if result.startswith("```json"):
-                result = result[7:]
-            if result.endswith("```"):
-                result = result[:-3]
+    attempts = max(1, key_count() or 1)
+    last_error = None
+    for attempt in range(attempts):
+        key = current_api_key()
+        if genai and key:
+            try:
+                genai.configure(api_key=key)
+            except Exception:
+                pass
+        try:
+            print_lg(f"Calling Gemini API for completion...")
+            response = model.generate_content(prompt, safety_settings=safety_settings)
             
-            return convert_to_json(result)
-        
-        return result
-    except Exception as e:
-        disable_ai_and_resume_on_rate_limit(e, source="Gemini")
-        critical_error_log(f"Error occurred while getting Gemini completion!", e)
-        return {"error": str(e)}
+            if not response.parts:
+                raise ValueError("The response from the Gemini API was empty. This might be due to safety filters blocking prompt or response.")
+
+            result = response.text
+
+            if is_json:
+                if result.startswith("```json"):
+                    result = result[7:]
+                if result.endswith("```"):
+                    result = result[:-3]
+                return convert_to_json(result)
+            
+            return result
+        except Exception as e:
+            last_error = e
+            if try_rotate_ai_key(e, source="Gemini AI"):
+                print_lg(f"Retrying Gemini AI call with API key {current_key_label()}...")
+                continue
+            disable_ai_and_resume_on_rate_limit(e, source="Gemini")
+            critical_error_log(f"Error occurred while getting Gemini completion!", e)
+            return {"error": str(e)}
+    if last_error:
+        return {"error": str(last_error)}
+    return {"error": "Gemini completion failed with no remaining API keys."}
+
 
 def gemini_extract_skills(model, job_description: str) -> list[str] | None:
     """

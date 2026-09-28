@@ -97,6 +97,7 @@ def validate_questions() -> None | ValueError | TypeError:
     check_string(cover_letter, "cover_letter")
     check_string(recent_employer, "recent_employer")
     check_string(confidence_level, "confidence_level")
+    check_string(user_information_all, "user_information_all")
 
     check_boolean(pause_before_submit, "pause_before_submit")
     check_boolean(pause_at_failed_question, "pause_at_failed_question")
@@ -181,6 +182,11 @@ def validate_secrets() -> None | ValueError | TypeError:
     check_boolean(use_AI, "use_AI")
     check_string(llm_api_url, "llm_api_url", min_length=5)
     check_string(llm_api_key, "llm_api_key")
+    check_string(
+        llm_spec,
+        "llm_spec",
+        ["openai", "openai-like", "openai-like-github", "openai-like-mistral", "deepseek", "gemini"],
+    )
     # check_string(llm_embedding_model, "llm_embedding_model")
     check_boolean(stream_output, "stream_output")
     check_int(ai_request_timeout, "ai_request_timeout", min_value=5)
@@ -188,7 +194,7 @@ def validate_secrets() -> None | ValueError | TypeError:
     
     ##> ------ Yang Li : MARKYangL - Feature ------
     # Validate DeepSeek configuration
-    check_string(ai_provider, "ai_provider", ["openai", "deepseek"])
+    check_string(ai_provider, "ai_provider", ["openai", "deepseek", "gemini"])
 
     ##> ------ Tim L : tulxoro - Refactor ------
     if ai_provider == "deepseek":
@@ -211,8 +217,8 @@ def validate_settings() -> None | ValueError | TypeError:
 
     check_boolean(close_tabs, "close_tabs")
     check_boolean(follow_companies, "follow_companies")
-    # check_boolean(connect_hr, "connect_hr")
-    # check_string(connect_request_message, "connect_request_message", min_length=10)
+    check_boolean(connect_hr, "connect_hr")
+    check_string(connect_request_message, "connect_request_message")
 
     check_boolean(run_non_stop, "run_non_stop")
     check_boolean(alternate_sortby, "alternate_sortby")
@@ -224,7 +230,7 @@ def validate_settings() -> None | ValueError | TypeError:
     check_int(recent_job_default_age_minutes, "recent_job_default_age_minutes", min_value=0)
     check_int(daily_limit_pause_hours, "daily_limit_pause_hours", min_value=1)
     
-    # check_string(generated_resume_path, "generated_resume_path", min_length=1)
+    check_string(generated_resume_path, "generated_resume_path", min_length=1)
 
     check_boolean(use_resume_engine, "use_resume_engine")
     check_string(resume_engine_root, "resume_engine_root", min_length=1)
@@ -279,6 +285,7 @@ def validate_settings() -> None | ValueError | TypeError:
     check_boolean(block_on_exit_summary, "block_on_exit_summary")
     check_boolean(block_on_chrome_open_error, "block_on_chrome_open_error")
     check_boolean(showAiErrorAlerts, "showAiErrorAlerts")
+    check_boolean(use_resume_generator, "use_resume_generator")
 
 
 

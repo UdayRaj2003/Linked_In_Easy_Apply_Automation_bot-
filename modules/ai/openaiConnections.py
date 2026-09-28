@@ -25,7 +25,8 @@ from config.search import security_clearance, did_masters
 
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
-from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, is_ai_enabled
+from modules.ai_runtime import disable_ai_and_resume_on_rate_limit, is_ai_enabled, try_rotate_ai_key
+from modules.ai_keys import apply_key_to_client, current_api_key, current_key_label, key_count
 from modules.bot_control import BotStopped, raise_if_stopped
 
 from pyautogui import confirm
@@ -90,7 +91,7 @@ def ai_create_openai_client() -> OpenAI:
         
         client = OpenAI(
             base_url=llm_api_url,
-            api_key=llm_api_key,
+            api_key=current_api_key() or llm_api_key,
             timeout=float(ai_request_timeout),
         )
 
@@ -109,6 +110,7 @@ def ai_create_openai_client() -> OpenAI:
         print_lg("---- SUCCESSFULLY CREATED OPENAI CLIENT! ----")
         print_lg(f"Using API URL: {llm_api_url}")
         print_lg(f"Using Model: {llm_model}")
+        print_lg(f"API keys configured: {key_count()} (using {current_key_label()})")
         print_lg(f"Models available from API: {len(model_ids)}")
         print_lg("Check './config/secrets.py' for more details.\n")
         print_lg("---------------------------------------------")
@@ -180,49 +182,65 @@ def ai_completion(client: OpenAI, messages: list[dict], response_format: dict = 
     if not client: raise ValueError("Client is not available!")
 
     raise_if_stopped()
-    params = {
-        "model": llm_model,
-        "messages": messages,
-        "stream": stream,
-        "timeout": float(ai_request_timeout),
-    }
+    last_error = None
+    attempts = max(1, key_count() or 1)
+    for attempt in range(attempts):
+        apply_key_to_client(client)
+        params = {
+            "model": llm_model,
+            "messages": messages,
+            "stream": stream,
+            "timeout": float(ai_request_timeout),
+        }
 
-    if model_supports_temperature(llm_model):
-        params["temperature"] = temperature
-    if response_format and llm_spec in ["openai", "openai-like"]:
-        params["response_format"] = response_format
+        if model_supports_temperature(llm_model):
+            params["temperature"] = temperature
+        if response_format and llm_spec in ["openai", "openai-like"]:
+            params["response_format"] = response_format
 
-    completion = client.chat.completions.create(**params)
+        try:
+            completion = client.chat.completions.create(**params)
 
-    result = ""
-    
-    # Log response
-    if stream:
-        print_lg("--STREAMING STARTED")
-        deadline = time.time() + float(ai_request_timeout)
-        for chunk in completion:
-            raise_if_stopped()
-            if time.time() > deadline:
-                raise TimeoutError(
-                    f"AI stream exceeded ai_request_timeout={ai_request_timeout}s"
-                )
-            ai_check_error(chunk)
-            chunkMessage = chunk.choices[0].delta.content
-            if chunkMessage != None:
-                result += chunkMessage
-            print_lg(chunkMessage, end="", flush=True)
-        print_lg("\n--STREAMING COMPLETE")
-    else:
-        raise_if_stopped()
-        ai_check_error(completion)
-        result = completion.choices[0].message.content
-    
-    if response_format:
-        result = convert_to_json(result)
-    
-    print_lg("\nAI Answer to Question:\n")
-    print_lg(result, pretty=response_format)
-    return result
+            result = ""
+
+            # Log response
+            if stream:
+                print_lg("--STREAMING STARTED")
+                deadline = time.time() + float(ai_request_timeout)
+                for chunk in completion:
+                    raise_if_stopped()
+                    if time.time() > deadline:
+                        raise TimeoutError(
+                            f"AI stream exceeded ai_request_timeout={ai_request_timeout}s"
+                        )
+                    ai_check_error(chunk)
+                    chunkMessage = chunk.choices[0].delta.content
+                    if chunkMessage != None:
+                        result += chunkMessage
+                    print_lg(chunkMessage, end="", flush=True)
+                print_lg("\n--STREAMING COMPLETE")
+            else:
+                raise_if_stopped()
+                ai_check_error(completion)
+                result = completion.choices[0].message.content
+
+            if response_format:
+                result = convert_to_json(result)
+
+            print_lg("\nAI Answer to Question:\n")
+            print_lg(result, pretty=response_format)
+            return result
+        except BotStopped:
+            raise
+        except Exception as e:
+            last_error = e
+            if try_rotate_ai_key(e, source="LinkedIn AI"):
+                print_lg(f"Retrying AI call with API key {current_key_label()}...")
+                continue
+            raise
+    if last_error:
+        raise last_error
+    raise ValueError("AI completion failed with no remaining API keys.")
 
 
 def ai_extract_skills(client: OpenAI, job_description: str, stream: bool = stream_output) -> dict | ValueError:

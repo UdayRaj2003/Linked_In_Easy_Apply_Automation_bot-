@@ -28,12 +28,12 @@ Note: RECOMMENDED TO LEAVE IT AS `True`, if you set it `False`, be sure to CLOSE
 # Follow easy applied companies
 follow_companies = True            # True or False, Note: True or False are case-sensitive
 
-## Upcoming features (In Development)
-# # Send connection requests to HR's 
-# connect_hr = True                  # True or False, Note: True or False are case-sensitive
+# Send connection requests to HRs after Easy Apply (experimental; code path mostly stubbed)
+connect_hr = False                 # True or False, Note: True or False are case-sensitive
 
-# # What message do you want to send during connection request? (Max. 200 Characters)
-# connect_request_message = ""       # Leave Empty to send connection request without personalized invitation (recommended to leave it empty, since you only get 10 per month without LinkedIn Premium*)
+# Message during connection request (Max. 200 Characters). Leave "" for no personalized note.
+# LinkedIn limits personalized invites (~10/month without Premium).
+connect_request_message = ""       # String
 
 # Do you want the program to run continuously until you stop it? (Beta)
 run_non_stop = True                # True or False, Note: True or False are case-sensitive
@@ -51,7 +51,7 @@ max_dead_cycles = 3                # Non-negative Integer
 
 # Recent-job gate: when ON, only apply if job_age_minutes <= recent_job_max_age_minutes
 recent_job_feature_enabled = True       # True or False, Note: True or False are case-sensitive
-recent_job_max_age_minutes = 30          # Non-negative Integer (e.g. 30 = last half hour)
+recent_job_max_age_minutes = 4320          # Non-negative Integer (e.g. 30 = last half hour)
 # Used when LinkedIn posted-time text cannot be parsed (still runs the gate when feature is ON)
 recent_job_default_age_minutes = 0       # Non-negative Integer
 
@@ -70,7 +70,8 @@ daily_limit_pause_hours = 10             # Positive Integer (e.g. 24 = wait one 
 generated_resume_path = "all resumes/" # (In Development)
 
 # Use the shared Resume Engine (RenderCv) via connectors/resume_engine_client.py
-use_resume_engine = True               # True or False, Note: True or False are case-sensitive
+# Disabled: connectors + RenderCv are not present in this workspace.
+use_resume_engine = True              # True or False, Note: True or False are case-sensitive
 # Absolute or relative path to the RenderCv project root (must contain resume_engine/)
 resume_engine_root = "../RenderCv"
 # Max seconds to wait for resume generation before uploading default_resume_path
@@ -85,7 +86,7 @@ min_jd_chars = 80                      # Non-negative Integer
 use_resume_score_gate = True           # True or False, Note: True or False are case-sensitive
 # Minimum score (0-100) required to generate a tailored resume and apply.
 # Example: RESUME_SCORE_THRESHOLD=70
-resume_score_threshold = 70            # Integer 0-100
+resume_score_threshold = 40            # Integer 0-100
 
 
 # >>>>>>>>>>> JD Email Outreach (AI_Outreach, local import) <<<<<<<<<<<
@@ -149,8 +150,8 @@ block_on_chrome_open_error = False  # Chrome failed to start alert
 # Backward-compatible alias used by AI modules
 showAiErrorAlerts = block_on_ai_errors
 
-# Use ChatGPT for resume building (Experimental Feature can break the application. Recommended to leave it as False) 
-# use_resume_generator = False       # True or False, Note: True or False are case-sensitive ,   This feature may only work with 'stealth_mode = True'. As ChatGPT website is hosted by CloudFlare which is protected by Anti-bot protections!
+# Use ChatGPT website for resume building (experimental; requires stealth_mode; mostly stubbed)
+use_resume_generator = False       # True or False, Note: True or False are case-sensitive
 
 
 

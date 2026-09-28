@@ -52,9 +52,37 @@ from modules.validator import validate_config
 from modules.saved_answers import get_saved_answer, capture_current_page_and_save, capture_all_pages_and_save
 
 if use_AI:
-    from modules.ai.openaiConnections import ai_create_openai_client, ai_extract_skills, ai_answer_question, ai_close_openai_client
-    from modules.ai.deepseekConnections import deepseek_create_client, deepseek_extract_skills, deepseek_answer_question
-    from modules.ai.geminiConnections import gemini_create_client, gemini_extract_skills, gemini_answer_question
+    # Import only the configured provider to avoid unused SDK warnings/failures.
+    _provider = (ai_provider or "openai").lower()
+    if _provider == "openai":
+        from modules.ai.openaiConnections import (
+            ai_create_openai_client,
+            ai_extract_skills,
+            ai_answer_question,
+            ai_close_openai_client,
+        )
+    elif _provider == "deepseek":
+        from modules.ai.deepseekConnections import (
+            deepseek_create_client,
+            deepseek_extract_skills,
+            deepseek_answer_question,
+        )
+        # DeepSeek reuses OpenAI client close helper when available
+        try:
+            from modules.ai.openaiConnections import ai_close_openai_client
+        except Exception:
+            def ai_close_openai_client(client):  # type: ignore
+                return None
+    elif _provider == "gemini":
+        from modules.ai.geminiConnections import (
+            gemini_create_client,
+            gemini_extract_skills,
+            gemini_answer_question,
+        )
+    else:
+        raise ValueError(
+            f'Unsupported ai_provider="{ai_provider}". Use "openai", "deepseek", or "gemini".'
+        )
 
 from typing import Literal
 
@@ -301,7 +329,7 @@ def login_LN() -> None:
     '''
     # Always land on login page fresh before filling credentials
     if "linkedin.com/login" not in driver.current_url.lower():
-    driver.get("https://www.linkedin.com/login")
+        open_url_with_retries(driver, "https://www.linkedin.com/login", attempts=3, wait_secs=2.0)
         print_lg("LinkedIn login opened. Waiting 5 seconds before entering credentials...")
         sleep(5)
     else:
@@ -322,7 +350,7 @@ def login_LN() -> None:
                 EC.presence_of_element_located((By.XPATH, '//input[@type="password"]')),
             )
         )
-        except Exception as e:
+    except Exception as e:
         print_lg(f"Login form did not appear. URL: {driver.current_url} | Title: {driver.title}", e)
 
     try:
@@ -490,17 +518,17 @@ def set_search_location() -> None:
             text_input(actions, search_location_ele, wanted, "Search Location")
             return
         print_lg("Search Location input was not given! Will continue with LinkedIn's current location.")
-        except ElementNotInteractableException:
-            try_xp(driver, ".//label[@class='jobs-search-box__input-icon jobs-search-box__keywords-label']")
-            actions.send_keys(Keys.TAB, Keys.TAB).perform()
-            actions.key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
+    except ElementNotInteractableException:
+        try_xp(driver, ".//label[@class='jobs-search-box__input-icon jobs-search-box__keywords-label']")
+        actions.send_keys(Keys.TAB, Keys.TAB).perform()
+        actions.key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
         actions.send_keys(wanted).perform()
-            sleep(2)
-            actions.send_keys(Keys.ENTER).perform()
-            try_xp(driver, ".//button[@aria-label='Cancel']")
-        except Exception as e:
-            try_xp(driver, ".//button[@aria-label='Cancel']")
-            print_lg("Failed to update search location, continuing with default location!", e)
+        sleep(2)
+        actions.send_keys(Keys.ENTER).perform()
+        try_xp(driver, ".//button[@aria-label='Cancel']")
+    except Exception as e:
+        try_xp(driver, ".//button[@aria-label='Cancel']")
+        print_lg("Failed to update search location, continuing with default location!", e)
 
 
 def apply_filters() -> None:
@@ -1722,23 +1750,23 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     if date_answer is not None:
                         answer = date_answer
                     elif 'email' in label or 'phone' in label:
-                    answer = prev_answer
-                elif 'gender' in label or 'sex' in label: 
-                    answer = gender
-                elif 'disability' in label: 
-                    answer = disability_status
-                elif 'proficiency' in label: 
-                    answer = 'Professional'
-                elif any(loc_word in label for loc_word in ['location', 'city', 'state', 'country']):
-                    if 'country' in label:
-                        answer = country 
-                    elif 'state' in label:
-                        answer = state
-                    elif 'city' in label:
-                        answer = current_city if current_city else work_location
+                        answer = prev_answer
+                    elif 'gender' in label or 'sex' in label:
+                        answer = gender
+                    elif 'disability' in label:
+                        answer = disability_status
+                    elif 'proficiency' in label:
+                        answer = 'Professional'
+                    elif any(loc_word in label for loc_word in ['location', 'city', 'state', 'country']):
+                        if 'country' in label:
+                            answer = country
+                        elif 'state' in label:
+                            answer = state
+                        elif 'city' in label:
+                            answer = current_city if current_city else work_location
+                        else:
+                            answer = work_location
                     else:
-                        answer = work_location
-                else: 
                         answer = answer_common_questions(label, "")
                         # AI picks interview-maximizing option when no heuristic match
                         if not answer and optionsText:
@@ -1778,14 +1806,14 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                             # Check if phrase is in option or option is in phrase (bidirectional matching)
                             if phrase.lower() in option.lower() or option.lower() in phrase.lower():
                                 try:
-                                select.select_by_visible_text(option)
-                                answer = option
-                                foundOption = True
+                                    select.select_by_visible_text(option)
+                                    answer = option
+                                    foundOption = True
                                     break
                                 except Exception:
                                     continue
                         if foundOption:
-                                break
+                            break
                     if not foundOption:
                         # Ask AI before random — pick the option that maximizes interview chances
                         if optionsText and not (_select_options_look_like_months(optionsText) or _select_options_look_like_years(optionsText)):
@@ -1813,10 +1841,10 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                 foundOption = True
                                 print_lg(f'Filled date dropdown "{label_org}" with "{answer}"')
                         if not foundOption:
-                        print_lg(f'Failed to find an option with text "{answer}" for question labelled "{label_org}", answering randomly!')
-                        select.select_by_index(randint(1, len(select.options)-1))
-                        answer = select.first_selected_option.text
-                        randomly_answered_questions.add((f'{label_org} [ {options} ]',"select"))
+                            print_lg(f'Failed to find an option with text "{answer}" for question labelled "{label_org}", answering randomly!')
+                            select.select_by_index(randint(1, len(select.options)-1))
+                            answer = select.first_selected_option.text
+                            randomly_answered_questions.add((f'{label_org} [ {options} ]',"select"))
             questions_list.add((f'{label_org} [ {options} ]', answer, "select", prev_answer))
             continue
         
@@ -2103,7 +2131,7 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     checked = want_checked
             elif any(k in label for k in ["currently work", "i currently work", "current role", "still work here"]):
                 # Work experience forms: check "I currently work here" so To-date can be optional/present
-            if not prev_answer:
+                if not prev_answer:
                     try:
                         actions.move_to_element(checkbox).click().perform()
                         checked = True
@@ -2115,7 +2143,7 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                 try:
                     actions.move_to_element(checkbox).click().perform()
                     checked = True
-                except Exception as e: 
+                except Exception as e:
                     print_lg("Checkbox click failed!", e)
                     pass
             questions_list.add((f'{label} ([X] {answer})', checked, "checkbox", prev_answer))
@@ -2196,7 +2224,7 @@ def failed_job(job_id: str, job_link: str, resume: str, date_listed, error: str,
     except Exception as e:
         print_lg("Failed to update failed jobs list!", e)
         if block_on_failed_logging:
-        pyautogui.alert("Failed to update the excel of failed jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
+            pyautogui.alert("Failed to update the excel of failed jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
 
 
 def screenshot(driver: WebDriver, job_id: str, failedAt: str) -> str:
@@ -2235,7 +2263,7 @@ def submitted_jobs(job_id: str, title: str, company: str, work_location: str, wo
     except Exception as e:
         print_lg("Failed to update submitted jobs list!", e)
         if block_on_failed_logging:
-        pyautogui.alert("Failed to update the excel of applied jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
+            pyautogui.alert("Failed to update the excel of applied jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
 
 
 
@@ -2287,7 +2315,7 @@ def _easy_apply_on_review_or_submit() -> bool:
 
 def discard_job() -> None:
     try:
-    actions.send_keys(Keys.ESCAPE).perform()
+        actions.send_keys(Keys.ESCAPE).perform()
         buffer(click_gap)
         if not wait_span_click(driver, 'Discard', 2):
             # Already closed or no discard prompt — not fatal
@@ -2455,7 +2483,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
             while current_count < switch_number:
                 # Wait until job listings are loaded
                 try:
-                wait.until(EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]")))
+                    wait.until(EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]")))
                 except Exception:
                     if _no_matching_jobs_found():
                         print_lg(f'No matching jobs found for "{searchTerm}". Switching to next search query...\n')
@@ -2512,7 +2540,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     print_lg("\n-@-\n")
 
                     try:
-                    job_id,title,company,work_location,work_style,skip = get_job_main_details(job, blacklisted_companies, rejected_jobs)
+                        job_id,title,company,work_location,work_style,skip = get_job_main_details(job, blacklisted_companies, rejected_jobs)
                     except StaleElementReferenceException as e:
                         print_lg(
                             f'Stale job card on "{searchTerm}"; switching to next search query...',
@@ -2810,7 +2838,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                             _click_add_more_if_needed(modal)
                                         except Exception as e:
                                             print_lg("Add more click failed:", e)
-                                    questions_list = answer_questions(modal, questions_list, work_location, job_description=description)
+                                        questions_list = answer_questions(modal, questions_list, work_location, job_description=description)
                                         # Resume generate/upload happens on Review (before Submit), not mid-form.
                                         # Do NOT auto-save bot fills here — that was saving random/trash answers.
                                         # Your corrections are saved only on pause Continue / before-submit confirm.
@@ -2879,7 +2907,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                 if errored in ("stuck", "help_timeout"):
                                     pass
                                 else:
-                                wait_span_click(driver, "Review", 1, scrollTop=True)
+                                    wait_span_click(driver, "Review", 1, scrollTop=True)
                                     try:
                                         modal = _refresh_easy_apply_modal()
                                     except Exception:
@@ -2916,12 +2944,12 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                     if not _submit_application_visible(modal):
                                         print_lg("Submit not visible yet — advancing with Next/Continue/Review...")
                                         modal, _ = _advance_easy_apply_toward_submit(modal)
-                                cur_pause_before_submit = pause_before_submit
+                                    cur_pause_before_submit = pause_before_submit
                                     if cur_pause_before_submit:
                                         decision = pyautogui.confirm('1. Please verify your information.\n2. If you edited something, please return to this final screen.\n3. DO NOT CLICK "Submit Application".\n\nYour edits will be saved automatically when you click Submit Application.\n\n\n\nYou can turn off "Pause before submit" setting in config.py\nTo TEMPORARILY disable pausing, click "Disable Pause"', "Confirm your information",["Disable Pause", "Discard Application", "Submit Application"])
                                         if decision == "Discard Application":
                                             raise Exception("Job application discarded by user!")
-                                    pause_before_submit = False if "Disable Pause" == decision else True
+                                        pause_before_submit = False if "Disable Pause" == decision else True
                                         if decision == "Submit Application":
                                             try:
                                                 modal = _refresh_easy_apply_modal()
@@ -2933,7 +2961,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                         modal = _refresh_easy_apply_modal()
                                     except Exception:
                                         modal = driver
-                                follow_company(modal)
+                                    follow_company(modal)
                                     submit_btn, _ = _find_easy_apply_button(("Submit application",), modal)
                                     submitted_ok = False
                                     if submit_btn is not None:
@@ -2952,13 +2980,13 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                             wait_span_click(driver, "Submit application", 2, scrollTop=True)
                                         )
                                     if submitted_ok:
-                                    date_applied = datetime.now()
+                                        date_applied = datetime.now()
                                         if not wait_span_click(driver, "Done", 2):
                                             actions.send_keys(Keys.ESCAPE).perform()
                                     elif cur_pause_before_submit and "Yes" in pyautogui.confirm("You submitted the application, didn't you 😒?", "Failed to find Submit Application!", ["Yes", "No"]):
-                                    date_applied = datetime.now()
-                                    wait_span_click(driver, "Done", 2)
-                                else:
+                                        date_applied = datetime.now()
+                                        wait_span_click(driver, "Done", 2)
+                                    else:
                                         print_lg(
                                             "Submit application still not available after resume "
                                             "Next/Review advance — discarding this application."
@@ -3112,7 +3140,7 @@ def main() -> None:
         if not os.path.exists(default_resume_path):
             print_lg(f'Missing default resume at "{default_resume_path}" — continuing with previous LinkedIn upload.')
             if block_on_missing_resume:
-            pyautogui.alert(text='Your default resume "{}" is missing! Please update it\'s folder path "default_resume_path" in config.py\n\nOR\n\nAdd a resume with exact name and path (check for spelling mistakes including cases).\n\n\nFor now the bot will continue using your previous upload from LinkedIn!'.format(default_resume_path), title="Missing Resume", button="OK")
+                pyautogui.alert(text='Your default resume "{}" is missing! Please update it\'s folder path "default_resume_path" in config.py\n\nOR\n\nAdd a resume with exact name and path (check for spelling mistakes including cases).\n\n\nFor now the bot will continue using your previous upload from LinkedIn!'.format(default_resume_path), title="Missing Resume", button="OK")
             useNewResume = False
         elif is_resume_engine_enabled():
             engine_root = _resolve_resume_engine_root()
@@ -3144,7 +3172,7 @@ def main() -> None:
         
         # Login to LinkedIn
         tabs_count = len(driver.window_handles)
-        driver.get("https://www.linkedin.com/login")
+        open_url_with_retries(driver, "https://www.linkedin.com/login", attempts=4, wait_secs=3.0)
         print_lg("LinkedIn opened. Waiting 5 seconds...")
         sleep(5)
         if not is_logged_in_LN(): login_LN()
@@ -3210,7 +3238,7 @@ def main() -> None:
         if _is_dead_browser_error(e):
             print_lg("Browser window closed or session is invalid. Exiting.", e)
         else:
-        critical_error_log("In Applier Main", e)
+            critical_error_log("In Applier Main", e)
             try:
                 if block_on_critical_error:
                     pyautogui.alert(e, alert_title)
@@ -3251,12 +3279,12 @@ def main() -> None:
             timeSavedMsg = f"In this run, you saved approx {round(timeSaved/60)} mins ({timeSaved} secs), please consider supporting the project."
         msg = f"{quotes}\n\n\n{timeSavedMsg}\nYou can also get your quote and name shown here, or prioritize your bug reports by supporting the project at:\n\nhttps://github.com/sponsors/GodsScion\n\n\nSummary:\n{summary}\n\n\nBest regards,\nSai Vignesh Golla\nhttps://www.linkedin.com/in/saivigneshgolla/\n\nTop Sponsors:\n{sponsors}"
         if block_on_exit_summary:
-        pyautogui.alert(msg, "Exiting..")
+            pyautogui.alert(msg, "Exiting..")
         print_lg(msg,"Closing the browser...")
         if tabs_count >= 10:
             msg = "NOTE: IF YOU HAVE MORE THAN 10 TABS OPENED, PLEASE CLOSE OR BOOKMARK THEM!\n\nOr it's highly likely that application will just open browser and not do anything next time!" 
             if block_on_exit_summary:
-            pyautogui.alert(msg,"Info")
+                pyautogui.alert(msg,"Info")
             print_lg("\n"+msg)
         ##> ------ Yang Li : MARKYangL - Feature ------
         if use_AI and aiClient:
@@ -3282,7 +3310,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     try:
-    main()
+        main()
     except KeyboardInterrupt:
         print_lg("Interrupted by user. Exiting cleanly.")
     except (ConnectionResetError, OSError) as e:

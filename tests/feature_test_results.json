@@ -1,0 +1,122 @@
+[
+  {
+    "feature": "AI rate-limit runtime switches",
+    "status": "pass",
+    "detail": "",
+    "risk": ""
+  },
+  {
+    "feature": "STOP BOT controls",
+    "status": "pass",
+    "detail": "request_stop / raise_if_stopped / clear_stop",
+    "risk": ""
+  },
+  {
+    "feature": "Config validation",
+    "status": "pass",
+    "detail": "All personals/questions/search/secrets/settings OK",
+    "risk": ""
+  },
+  {
+    "feature": "Resume Engine connector",
+    "status": "pass",
+    "detail": "fallback reason=engine root missing: D:\\missing_rendercv; PDF validates",
+    "risk": ""
+  },
+  {
+    "feature": "Common question heuristics",
+    "status": "pass",
+    "detail": "visa->'No'; passthrough for unknown labels",
+    "risk": ""
+  },
+  {
+    "feature": "Experience extraction",
+    "status": "pass",
+    "detail": "",
+    "risk": ""
+  },
+  {
+    "feature": "Resume Engine JD usability gate",
+    "status": "pass",
+    "detail": "short->Insufficient JD content",
+    "risk": ""
+  },
+  {
+    "feature": "Feature flags inventory",
+    "status": "pass",
+    "detail": "21 critical flags present",
+    "risk": ""
+  },
+  {
+    "feature": "Flask applied-jobs UI",
+    "status": "pass",
+    "detail": "GET / returns 200",
+    "risk": ""
+  },
+  {
+    "feature": "Helpers (lakhs/CSV truncate)",
+    "status": "pass",
+    "detail": "",
+    "risk": ""
+  },
+  {
+    "feature": "Recent-job age gate",
+    "status": "pass",
+    "detail": "parse_job_age_minutes + is_within_recent_job_window",
+    "risk": ""
+  },
+  {
+    "feature": "JD email outreach fire-and-forget",
+    "status": "pass",
+    "detail": "Daemon thread started with dummy JD email",
+    "risk": ""
+  },
+  {
+    "feature": "JD email outreach guards",
+    "status": "pass",
+    "detail": "No-op when disabled/empty/Unknown",
+    "risk": ""
+  },
+  {
+    "feature": "LinkedIn navigation retries",
+    "status": "pass",
+    "detail": "Recovers after ERR_NAME_NOT_RESOLVED",
+    "risk": ""
+  },
+  {
+    "feature": "Default resume file",
+    "status": "pass",
+    "detail": "D:/Resume_Uday_26_08.pdf",
+    "risk": ""
+  },
+  {
+    "feature": "Resume score gate (disabled)",
+    "status": "pass",
+    "detail": "Passes through when use_resume_score_gate=False",
+    "risk": ""
+  },
+  {
+    "feature": "Resume score gate parsing",
+    "status": "pass",
+    "detail": "",
+    "risk": ""
+  },
+  {
+    "feature": "Saved answers memory",
+    "status": "pass",
+    "detail": "normalize + upsert + get_saved_answer with temp JSON",
+    "risk": ""
+  },
+  {
+    "feature": "Python syntax",
+    "status": "pass",
+    "detail": "runAiBot.py + modules parse cleanly",
+    "risk": ""
+  },
+  {
+    "feature": "URL job search builder",
+    "status": "pass",
+    "detail": "https://www.linkedin.com/jobs/search/?f_AL=true&f_E=2%2C3&f_TPR=r259200&geoId=102713980&keywords=Python+Developer&origin...",
+    "risk": ""
+  }
+]

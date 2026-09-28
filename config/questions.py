@@ -21,10 +21,10 @@ version:    26.01.20.5.08
 # >>>>>>>>>>> Easy Apply Questions & Inputs <<<<<<<<<<<
 
 # Give an relative path of your default resume to be uploaded. If file in not found, will continue using your previously uploaded resume in LinkedIn.
-default_resume_path = "D:/Resume_Uday_26_08.docx"
+default_resume_path = "D:/Resume_Uday_26_08.pdf"
 
 # What do you want to answer for questions that ask about years of experience you have, this is different from current_experience?
-years_of_experience = "1"
+years_of_experience = "2"
 
 # Do you need visa sponsorship now or in future?
 require_visa = "No"

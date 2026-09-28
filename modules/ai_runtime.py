@@ -12,6 +12,7 @@ import re
 
 from config.secrets import use_AI as _config_use_ai
 from config.settings import use_resume_engine as _config_use_resume_engine
+from modules.ai_keys import is_key_failover_error, rotate_api_key
 from modules.helpers import print_lg
 
 _ai_disabled = False
@@ -39,13 +40,29 @@ def is_rate_limit_error(exc_or_text) -> bool:
     return any(re.search(p, text, flags=re.IGNORECASE) for p in _RATE_LIMIT_PATTERNS)
 
 
+def try_rotate_ai_key(exc_or_text, *, source: str = "AI") -> bool:
+    '''
+    Rotate to the next API key on 429/auth errors.
+    Returns True if another key is ready (caller should retry).
+    Returns False if no failover applies, or all keys are used up
+    (AI is then disabled on rate/auth exhaustion).
+    '''
+    if not is_key_failover_error(exc_or_text) and not is_rate_limit_error(exc_or_text):
+        return False
+    if rotate_api_key(exc_or_text):
+        print_lg(f"AI key failover ({source}): retrying with the next key.")
+        return True
+    disable_linkedin_ai_on_rate_limit(exc_or_text, source=source)
+    return False
+
+
 def disable_linkedin_ai_on_rate_limit(exc_or_text, *, source: str = "LinkedIn AI") -> bool:
     '''
-    If rate/quota limited, disable LinkedIn answer-filling AI only for this process.
-    Resume Engine is left alone.
+    Disable LinkedIn answer-filling AI for this process after all keys failed
+    (or a rate/quota error with a single key). Resume Engine is left alone.
     '''
     global _ai_disabled, _ai_disable_reason
-    if not is_rate_limit_error(exc_or_text):
+    if not is_rate_limit_error(exc_or_text) and not is_key_failover_error(exc_or_text):
         return False
     if _ai_disabled:
         return True
@@ -54,9 +71,10 @@ def disable_linkedin_ai_on_rate_limit(exc_or_text, *, source: str = "LinkedIn AI
     _ai_disable_reason = str(exc_or_text)[:300]
     print_lg(
         f"\n*** API RATE/QUOTA LIMIT HIT ({source}) ***\n"
+        f"All configured API keys failed (or only one key was set). "
         f"Disabling LinkedIn AI answers for this run only.\n"
         f"Resume Engine keeps running. Easy Apply continues with saved/heuristic answers.\n"
-        f"Add credits or wait for daily reset to re-enable LinkedIn AI on the next run.\n"
+        f"Add credits, add another key in llm_api_keys, or wait for daily reset.\n"
         f"Reason: {_ai_disable_reason}\n"
     )
     return True

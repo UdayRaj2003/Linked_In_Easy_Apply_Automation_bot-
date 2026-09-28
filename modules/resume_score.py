@@ -78,22 +78,25 @@ def apply_resume_score_gate(
     - continue_apply: True to generate resume / apply
     - skip_reason: failed_job reason (or None)
     - skip_message: failed_job detail (or None)
+
+    If scoring fails due to any condition (AI failure, AI disabled, missing resume text,
+    insufficient JD content, exception, unparseable output), it passes by default.
     '''
     if not use_resume_score_gate:
         return True, None, None
 
     if not jd_usable:
-        print_lg("JD rejected — Resume Score unavailable (insufficient JD content)")
-        return False, "Low resume score / scoring skipped", "Insufficient JD content for resume scoring"
+        print_lg("Resume Score skipped — insufficient JD content (passing gate by default)")
+        return True, None, None
 
     if not (is_ai_enabled() and ai_client):
-        print_lg("JD rejected — Resume Score unavailable (AI is disabled)")
-        return False, "Low resume score / scoring skipped", "AI disabled; resume score gate cannot run"
+        print_lg("Resume Score skipped — AI disabled or client unavailable (passing gate by default)")
+        return True, None, None
 
     resume_text = (user_information_all or "").strip()
     if not resume_text:
-        print_lg("JD rejected — Resume Score unavailable (no resume text in user_information_all)")
-        return False, "Low resume score / scoring skipped", "user_information_all is empty"
+        print_lg("Resume Score skipped — user_information_all is empty (passing gate by default)")
+        return True, None, None
 
     raise_if_stopped()
     try:
@@ -101,13 +104,13 @@ def apply_resume_score_gate(
     except BotStopped:
         raise
     except Exception as e:
-        print_lg("JD rejected — Resume Score unavailable (scoring failed)", e)
-        return False, "Low resume score / scoring skipped", str(e)
+        print_lg("Resume Score failed due to AI/system error (passing gate by default):", e)
+        return True, None, None
 
     score = parse_resume_score(raw)
     if score is None:
-        print_lg(f"JD rejected — Resume Score unavailable (could not parse score from: {raw!r})")
-        return False, "Low resume score / scoring skipped", f"Unparseable score response: {raw}"
+        print_lg(f"Resume Score skipped — could not parse score from AI response: {raw!r} (passing gate by default)")
+        return True, None, None
 
     print_lg(f"JD passed eligibility — Resume Score: {score}/100")
     if score < resume_score_threshold:
@@ -117,3 +120,4 @@ def apply_resume_score_gate(
 
     print_lg("JD qualified — generating tailored resume")
     return True, None, None
+
