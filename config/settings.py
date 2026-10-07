@@ -78,6 +78,8 @@ resume_engine_root = "../RenderCv"
 resume_generation_timeout = 900        # Non-negative Integer (default: 10 minutes)
 # Minimum stripped job-description length required before calling the Resume Engine
 min_jd_chars = 80                      # Non-negative Integer
+# Template design for RenderCv resume generation ("template2" for Template 2 design, "default" for Classic)
+resume_template_name = "template2"
 
 
 # >>>>>>>>>>> JD vs Resume Score Gate <<<<<<<<<<<
@@ -86,7 +88,7 @@ min_jd_chars = 80                      # Non-negative Integer
 use_resume_score_gate = True           # True or False, Note: True or False are case-sensitive
 # Minimum score (0-100) required to generate a tailored resume and apply.
 # Example: RESUME_SCORE_THRESHOLD=70
-resume_score_threshold = 40            # Integer 0-100
+resume_score_threshold = 50           # Integer 0-100
 
 
 # >>>>>>>>>>> JD Email Outreach (AI_Outreach, local import) <<<<<<<<<<<

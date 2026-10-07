@@ -25,13 +25,21 @@ def parse_resume_score(result) -> int | None:
     if isinstance(result, (int, float)):
         return _clamp_score(int(result))
     if isinstance(result, dict):
-        if result.get("error") and "score" not in result:
-            return None
         if "score" in result:
-            return parse_resume_score(result.get("score"))
+            score_val = parse_resume_score(result.get("score"))
+            if score_val is not None:
+                return score_val
         nested = result.get("data")
         if nested is not None and nested is not result:
-            return parse_resume_score(nested)
+            parsed_nested = parse_resume_score(nested)
+            if parsed_nested is not None:
+                return parsed_nested
+        if result.get("error"):
+            err_str = str(result.get("data") or "") + " " + str(result.get("error") or "")
+            match = re.search(r'(?i)"?score"?\s*[:=]?\s*\{?\s*"?score"?\s*[:=]?\s*(\d{1,3})', err_str)
+            if match:
+                return _clamp_score(int(match.group(1)))
+            return None
         return None
     text = str(result).strip()
     if not text:
@@ -39,11 +47,16 @@ def parse_resume_score(result) -> int | None:
     try:
         obj = json.loads(text)
         if isinstance(obj, dict):
-            return parse_resume_score(obj)
+            parsed_obj = parse_resume_score(obj)
+            if parsed_obj is not None:
+                return parsed_obj
         if isinstance(obj, (int, float)):
             return _clamp_score(int(obj))
     except Exception:
         pass
+    match_score = re.search(r'(?i)"?score"?\s*[:=]?\s*\{?\s*"?score"?\s*[:=]?\s*(\d{1,3})', text)
+    if match_score:
+        return _clamp_score(int(match_score.group(1)))
     match = re.search(r"\b(100|[0-9]{1,2})\b", text)
     if match:
         return _clamp_score(int(match.group(1)))

@@ -11,7 +11,9 @@ search_terms = [
     "SDET",
     "Associate Software Engineer",
     "Graduate Software Engineer",
-    "Entry Level Software Engineer"
+    "Entry Level Software Engineer",
+    ".NET Developer",
+    "Flutter Developer",
 ]
 
 # Search location, this will be filled in "City, state, or zip code" search box.
@@ -128,6 +130,7 @@ about_company_bad_words = [
     "Scoutit",
     "Mindrift",
     "HRM Counsel",
+    "Crossing Hurdles",
 ]
 
 # Skip checking for `about_company_bad_words` for these companies if they have these good words in their 'About Company' section...
@@ -151,8 +154,7 @@ bad_words = [
     "No C2C",
     "No Corp2Corp",
     "Senior Architect",
-    "15+ years",
-    ".NET",
+    "15+ years", 
     "PHP",
     "Ruby",
     "CNC",  
@@ -166,4 +168,4 @@ did_masters = False
 
 # Avoid applying to jobs if their required experience is above your current_experience.
 # Set value as -1 if you want to apply to all jobs regardless of experience requirement.
-current_experience = 2
+current_experience = 1

@@ -854,9 +854,11 @@ def _prepare_resume_pdf_for_job(
         f"(timeout={resume_generation_timeout}s)... "
         f"[STOP BOT window / Ctrl+Shift+Q to cancel]"
     )
+    template_choice = globals().get("resume_template_name", "template2")
     result = prepare_resume(
         job_text,
         engine_root=_resolve_resume_engine_root(),
+        template=template_choice,
         output_dir=output_dir,
         timeout=float(resume_generation_timeout),
         cancel_check=should_stop,

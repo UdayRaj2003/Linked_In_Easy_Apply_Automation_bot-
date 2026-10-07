@@ -21,10 +21,10 @@ version:    26.01.20.5.08
 # >>>>>>>>>>> Easy Apply Questions & Inputs <<<<<<<<<<<
 
 # Give an relative path of your default resume to be uploaded. If file in not found, will continue using your previously uploaded resume in LinkedIn.
-default_resume_path = "D:/Resume_Uday_26_08.pdf"
+default_resume_path = "D:/Uday_Resume.pdf"
 
 # What do you want to answer for questions that ask about years of experience you have, this is different from current_experience?
-years_of_experience = "2"
+years_of_experience = "1"
 
 # Do you need visa sponsorship now or in future?
 require_visa = "No"
@@ -114,7 +114,7 @@ Name: Uday Raj Gupta
 Contact Information:
 • Email: udayrajgupta2003@gmail.com
 • Phone: +91 7470810014
-• Location: Pune 411045, Maharashtra, India
+• Location: Indore, India
 
 Professional Summary:
 Full Stack Developer and QA Analyst with experience in MERN stack development, REST APIs, API integration, software testing, automation testing, and scalable web application development. Strong foundation in Data Structures & Algorithms, Object-Oriented Programming, System Design, SDLC, Agile Scrum, and modern web technologies. Experienced in both software development and quality assurance across SaaS finance platforms.
@@ -123,7 +123,7 @@ Education:
 Bachelor of Technology (B.Tech) in Electronics & Telecommunication Engineering
 Shri G.S. Institute of Technology & Science (SGSITS), Indore
 RGPV University
-CGPA: 7.5
+CGPA: 7.8
 Graduated: 2026
 
 Professional Experience:
@@ -191,15 +191,19 @@ Frontend:
 • Responsive Design
 • Tailwind CSS
 • Figma
+• Flutter
+
 
 Backend:
 • Node.js
 • Express.js
 • REST APIs
+• .NET Core
 • Authentication
 • CRUD Operations
 • API Integration
 • Request/Response Handling
+
 
 Databases:
 • MongoDB
