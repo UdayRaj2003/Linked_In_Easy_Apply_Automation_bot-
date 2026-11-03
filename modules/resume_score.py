@@ -36,9 +36,12 @@ def parse_resume_score(result) -> int | None:
                 return parsed_nested
         if result.get("error"):
             err_str = str(result.get("data") or "") + " " + str(result.get("error") or "")
-            match = re.search(r'(?i)"?score"?\s*[:=]?\s*\{?\s*"?score"?\s*[:=]?\s*(\d{1,3})', err_str)
+            match = re.search(r'(?i)\bscore\b[^\d]*(\d{1,3})', err_str)
             if match:
                 return _clamp_score(int(match.group(1)))
+            num_match = re.search(r"\b(100|[0-9]{1,2})\b", err_str)
+            if num_match:
+                return _clamp_score(int(num_match.group(1)))
             return None
         return None
     text = str(result).strip()
@@ -54,7 +57,17 @@ def parse_resume_score(result) -> int | None:
             return _clamp_score(int(obj))
     except Exception:
         pass
-    match_score = re.search(r'(?i)"?score"?\s*[:=]?\s*\{?\s*"?score"?\s*[:=]?\s*(\d{1,3})', text)
+    # Try closing open braces if truncated
+    for fix in [text + "}", text + "}}", text + "}}}"]:
+        try:
+            obj = json.loads(fix)
+            if isinstance(obj, dict):
+                score_val = parse_resume_score(obj)
+                if score_val is not None:
+                    return score_val
+        except Exception:
+            pass
+    match_score = re.search(r'(?i)\bscore\b[^\d]*(\d{1,3})', text)
     if match_score:
         return _clamp_score(int(match_score.group(1)))
     match = re.search(r"\b(100|[0-9]{1,2})\b", text)

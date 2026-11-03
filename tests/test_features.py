@@ -204,6 +204,11 @@ class TestResumeScore(unittest.TestCase):
         self.assertEqual(parse_resume_score({"score": 70}), 70)
         self.assertEqual(parse_resume_score('{"score": 55}'), 55)
         self.assertEqual(parse_resume_score("The match score is 42 out of 100"), 42)
+        self.assertEqual(
+            parse_resume_score({'data': '{"score":{ "score": 85 }', 'error': 'Unable to parse the response as JSON'}),
+            85,
+        )
+        self.assertEqual(parse_resume_score('{"score":{ "score": 85 }'), 85)
         self.assertIsNone(parse_resume_score(None))
         self.assertIsNone(parse_resume_score({"error": "fail"}))
         record("Resume score gate parsing", "pass")

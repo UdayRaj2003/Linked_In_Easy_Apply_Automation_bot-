@@ -88,7 +88,7 @@ resume_template_name = "template2"
 use_resume_score_gate = True           # True or False, Note: True or False are case-sensitive
 # Minimum score (0-100) required to generate a tailored resume and apply.
 # Example: RESUME_SCORE_THRESHOLD=70
-resume_score_threshold = 50           # Integer 0-100
+resume_score_threshold = 80           # Integer 0-100
 
 
 # >>>>>>>>>>> JD Email Outreach (AI_Outreach, local import) <<<<<<<<<<<

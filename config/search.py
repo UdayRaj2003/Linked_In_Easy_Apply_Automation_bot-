@@ -158,6 +158,9 @@ bad_words = [
     "PHP",
     "Ruby",
     "CNC",  
+    "Trainer",
+    "Mentor",
+    "Teacher",
 ]
 
 # Do you have an active Security Clearance? (True for Yes and False for No)
