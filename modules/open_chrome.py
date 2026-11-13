@@ -59,6 +59,8 @@ def _guest_profile_path(*, fresh: bool = False) -> str:
         # Stale lock from a previous crashed Chrome — clear profile
         print_lg(f"Removing stale Chrome guest profile lock under {profile}")
         shutil.rmtree(profile, ignore_errors=True)
+        if (profile / "DevToolsActivePort").exists():
+            profile = base.parent / f"{base.name}-{os.getpid()}-{int(time.time())}"
     profile.mkdir(parents=True, exist_ok=True)
     return str(profile)
 
@@ -76,6 +78,8 @@ def _apply_stable_chrome_options(options) -> None:
     options.add_argument("--ignore-certificate-errors")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--remote-allow-origins=*")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--start-maximized")
     options.page_load_strategy = "normal"
 
 

@@ -184,7 +184,10 @@ def ai_completion(client: OpenAI, messages: list[dict], response_format: dict = 
     raise_if_stopped()
     last_error = None
     attempts = max(1, key_count() or 1)
-    for attempt in range(attempts):
+    transient_retried = False
+    attempt = 0
+    while attempt < attempts:
+        attempt += 1
         apply_key_to_client(client)
         params = {
             "model": llm_model,
@@ -236,6 +239,12 @@ def ai_completion(client: OpenAI, messages: list[dict], response_format: dict = 
             last_error = e
             if try_rotate_ai_key(e, source="LinkedIn AI"):
                 print_lg(f"Retrying AI call with API key {current_key_label()}...")
+                continue
+            err_low = str(e).lower()
+            if not transient_retried and any(m in err_low for m in ("502", "503", "provider_unavailable", "sse stream")):
+                transient_retried = True
+                attempt -= 1
+                time.sleep(1.5)
                 continue
             raise
     if last_error:

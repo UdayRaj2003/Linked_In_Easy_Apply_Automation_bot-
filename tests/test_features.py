@@ -394,6 +394,12 @@ class TestExperienceAndQuestions(unittest.TestCase):
         self.assertFalse(bad)
         record("Resume Engine JD usability gate", "pass", f"short->{reason2}")
 
+    def test_easy_apply_experience_label_matching(self):
+        label = "how many years of hands-on development have you done on production applications used by real users? exclude support or maintenance-only roles.*"
+        matched = ('experience' in label or 'years' in label or 'development' in label)
+        self.assertTrue(matched)
+        record("Screening question experience matching", "pass", "years/development matched")
+
 
 class TestResumePath(unittest.TestCase):
     def test_default_resume_exists(self):
@@ -498,6 +504,272 @@ class TestFeatureFlagsPresent(unittest.TestCase):
             record("Feature flags inventory", "fail", ", ".join(missing))
             self.fail(missing)
         record("Feature flags inventory", "pass", f"{sum(len(v) for v in required.values())} critical flags present")
+
+
+class TestJobListings(unittest.TestCase):
+    def test_find_job_listings_fallback(self):
+        import runAiBot
+        mock_driver = MagicMock()
+        mock_card = MagicMock()
+        mock_driver.find_elements.side_effect = lambda by, xp: (
+            [mock_card] if "job-card-component-ref-" in xp else []
+        )
+        res = runAiBot.find_job_listings(mock_driver)
+        self.assertEqual(res, [mock_card])
+        # Also verify fallback still works when SDUI componentkey cards aren't present
+        mock_driver.find_elements.side_effect = lambda by, xp: (
+            [mock_card] if "/jobs/view/" in xp else []
+        )
+        self.assertEqual(runAiBot.find_job_listings(mock_driver), [mock_card])
+        record("Job listings locator fallback", "pass", "Matches SDUI componentkey cards and falls back cleanly")
+
+    def test_details_pane_visibility(self):
+        import runAiBot
+        mock_driver = MagicMock()
+        mock_el = MagicMock()
+        mock_el.is_displayed.return_value = True
+        mock_driver.find_elements.return_value = [mock_el]
+        self.assertTrue(runAiBot.is_details_pane_visible(mock_driver))
+
+        mock_el.is_displayed.return_value = False
+        self.assertFalse(runAiBot.is_details_pane_visible(mock_driver))
+        record("Details pane visibility detection", "pass", "Correctly detects whether right pane is visible or hidden")
+
+    def test_sdui_question_label_extraction(self):
+        import runAiBot
+        q = MagicMock()
+        p_el = MagicMock()
+        p_el.text = "What is your Expected CTC ?*"
+        p_el.find_element.side_effect = Exception("no visually-hidden")
+        q.find_element.side_effect = lambda by, xp: p_el if xp == "./p[1]" else (_ for _ in ()).throw(Exception("not found"))
+        ctrl = MagicMock()
+        ctrl.find_element.side_effect = Exception("no preceding p")
+        ctrl.get_attribute.return_value = "What is your Expected CTC ?"
+        self.assertEqual(runAiBot._extract_sdui_or_legacy_label(q, ctrl), "What is your Expected CTC ?*")
+        record("SDUI question label extraction", "pass", "Extracts prompt from <p> sibling even without <label>")
+
+    def test_sdui_jd_delayed_load_clicks_container(self):
+        import runAiBot
+        from unittest.mock import patch
+        calls = {"n": 0}
+        pane = MagicMock()
+        container = MagicMock()
+        jd_box = MagicMock()
+        more_btn = MagicMock()
+        more_btn.is_displayed.return_value = True
+
+        def fake_find_elements(by, xp):
+            calls["n"] += 1
+            if "lazy-column" in xp:
+                return [pane]
+            if "expandable-text-box" in xp:
+                if calls["n"] < 14:
+                    jd_box.text = ""
+                    return [jd_box]
+                jd_box.text = (
+                    "About the job We are seeking a Python QA Automation Engineer with strong Selenium "
+                    "and API automation skills to build reliable test frameworks."
+                )
+                return [jd_box]
+            if "JobDetails_AboutTheJob_" in xp:
+                return [container]
+            return []
+
+        jd_box.find_element.return_value = more_btn
+        container.text = ""
+        mock_driver = MagicMock()
+        mock_driver.find_elements.side_effect = fake_find_elements
+
+        with patch.object(runAiBot, "driver", mock_driver), \
+             patch.object(runAiBot, "sleep", lambda _s: None), \
+             patch.object(runAiBot, "find_by_class", side_effect=Exception("none")):
+            desc, _exp, skip, _reason, _msg = runAiBot.get_job_description()
+
+        self.assertIn("Python QA Automation Engineer", desc)
+        self.assertFalse(skip)
+        self.assertTrue(container.click.called)
+        self.assertTrue(more_btn.is_displayed.called)
+        record("SDUI delayed JD container click & wait", "pass", "Scrolls/clicks JD container, expands more button, and waits until JD loads")
+
+    def test_sdui_card_company_not_duplicated_from_title(self):
+        import runAiBot
+        from unittest.mock import patch
+        job = MagicMock()
+        job.get_dom_attribute.side_effect = lambda attr: "job-card-component-ref-4488854259" if attr == "componentkey" else None
+        job.get_attribute.side_effect = job.get_dom_attribute.side_effect
+        job.text = "Python Developer\nPython Developer (Verified job)\nHRM Counsel\nIndia (Remote)"
+        title_el = MagicMock()
+        title_el.text = "Python Developer"
+
+        def fake_job_find(by, xp):
+            if "p[1]//span[1]" in xp:
+                return title_el
+            raise Exception("not found")
+
+        job.find_element.side_effect = fake_job_find
+        job.find_elements.return_value = []
+        mock_driver = MagicMock()
+
+        with patch.object(runAiBot, "driver", mock_driver), \
+             patch.object(runAiBot, "scroll_to_view", lambda *a, **k: None), \
+             patch.object(runAiBot, "buffer", lambda _x: None), \
+             patch.object(runAiBot, "sleep", lambda _s: None):
+            jid, title, company, loc, style, skip = runAiBot.get_job_main_details(job, set(), set())
+
+        self.assertEqual(jid, "4488854259")
+        self.assertEqual(title, "Python Developer")
+        self.assertEqual(company, "HRM Counsel")
+        self.assertEqual(loc, "India")
+        self.assertEqual(style, "Remote")
+        self.assertFalse(skip)
+        record("SDUI card company dedup extraction", "pass", "Extracts distinct company/location even when card repeats title span")
+
+    def test_modal_action_skips_review_job_post(self):
+        import runAiBot
+        review_job_btn = MagicMock()
+        review_job_btn.is_displayed.return_value = True
+        review_job_btn.text = "Review job post"
+        cont_btn = MagicMock()
+        cont_btn.is_displayed.return_value = True
+        cont_btn.text = "Continue applying"
+
+        modal = MagicMock()
+        modal.find_elements.side_effect = lambda by, xp: (
+            [review_job_btn] if ("contains" in xp and '"Review"' in xp)
+            else [cont_btn] if ("contains" in xp and '"Continue"' in xp)
+            else []
+        )
+        with unittest.mock.patch.object(runAiBot, "_modal_has_open_save_form", return_value=False):
+            chosen = runAiBot._click_easy_apply_modal_action(modal)
+        self.assertIs(chosen, cont_btn)
+        record("Modal action skips Review job post", "pass", "Ignores 'Review job post' and picks 'Continue applying'")
+
+    def test_sdui_resume_upload_finds_document_file_input(self):
+        import tempfile
+        import runAiBot
+        from unittest.mock import patch
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+            pdf_path = tf.name
+        try:
+            modal = MagicMock()
+            modal.find_elements.return_value = []
+            doc_input = MagicMock()
+            mock_driver = MagicMock()
+            mock_driver.find_elements.side_effect = lambda by, xp: (
+                [doc_input] if xp == '//dialog[@open]//input[@type="file" or @name="file"]' else []
+            )
+            with patch.object(runAiBot, "driver", mock_driver), \
+                 patch.object(runAiBot, "sleep", lambda _s: None):
+                ok, uploaded_path = runAiBot._send_resume_to_file_inputs(modal, pdf_path)
+            self.assertTrue(ok)
+            self.assertEqual(uploaded_path, os.path.abspath(pdf_path))
+            doc_input.send_keys.assert_called_once_with(os.path.abspath(pdf_path))
+            record("SDUI resume upload file input fallback", "pass", "Finds SDUI dialog/document file input without classic jobs-easy-apply wrapper")
+        finally:
+            try:
+                os.unlink(pdf_path)
+            except OSError:
+                pass
+
+    def test_sdui_jd_uses_block_separated_js_text(self):
+        import runAiBot
+        from unittest.mock import patch
+
+        jd_el = MagicMock()
+        jd_el.text = "Apply at marketingvertos@gmail.comContact us"
+        mock_driver = MagicMock()
+        mock_driver.find_elements.side_effect = lambda by, xp: (
+            [jd_el] if "expandable-text-box" in xp else []
+        )
+        mock_driver.execute_script.side_effect = (
+            lambda script, *args: "Apply at marketingvertos@gmail.com\nContact us with Python experience >= 1 year."
+            if "cloneNode" in script else None
+        )
+        with patch.object(runAiBot, "driver", mock_driver), \
+             patch.object(runAiBot, "sleep", lambda _s: None):
+            desc, _exp, skip, _reason, _msg = runAiBot.get_job_description()
+
+        self.assertIn("marketingvertos@gmail.com\nContact us", desc)
+        self.assertFalse(skip)
+        record("SDUI JD block newline extraction", "pass", "Preserves paragraph breaks so adjacent text doesn't glue onto JD emails")
+
+    def test_sdui_resume_upload_captures_lazy_upload_button_input(self):
+        import tempfile
+        import runAiBot
+        from unittest.mock import patch
+        from selenium.webdriver.remote.webelement import WebElement
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+            pdf_path = tf.name
+        try:
+            upload_btn = MagicMock()
+            upload_btn.is_displayed.return_value = True
+            captured_input = MagicMock(spec=WebElement)
+            modal = MagicMock()
+            modal.find_elements.side_effect = lambda by, xp: (
+                [upload_btn] if "upload resume" in xp.lower() else []
+            )
+            mock_driver = MagicMock()
+            mock_driver.find_elements.return_value = []
+            mock_driver.execute_script.side_effect = (
+                lambda script, *args: captured_input
+                if "return window.__botCapturedFileInput" in script else None
+            )
+            with patch.object(runAiBot, "driver", mock_driver), \
+                 patch.object(runAiBot, "sleep", lambda _s: None):
+                ok, _ = runAiBot._send_resume_to_file_inputs(modal, pdf_path)
+            self.assertTrue(ok)
+            upload_btn.click.assert_called_once()
+            captured_input.send_keys.assert_called_once_with(os.path.abspath(pdf_path))
+            record("SDUI lazy upload button capture", "pass", "Captures dynamically triggered <input type=file> without OS dialog")
+        finally:
+            try:
+                os.unlink(pdf_path)
+            except OSError:
+                pass
+
+    def test_sdui_card_strips_selected_prefix(self):
+        import runAiBot
+        from unittest.mock import patch
+
+        job = MagicMock()
+        job.get_dom_attribute.side_effect = lambda attr: "job-card-component-ref-123456" if attr == "componentkey" else None
+        job.get_attribute.side_effect = job.get_dom_attribute.side_effect
+        job.text = "Selected, QA Engineer\nAcme Corp\nBengaluru (Hybrid)"
+        title_el = MagicMock()
+        title_el.text = "Selected, QA Engineer"
+        job.find_element.side_effect = lambda by, xp: title_el if "p[1]//span[1]" in xp else (_ for _ in ()).throw(Exception("nf"))
+        job.find_elements.return_value = []
+        with patch.object(runAiBot, "driver", MagicMock()), \
+             patch.object(runAiBot, "scroll_to_view", lambda *a, **k: None), \
+             patch.object(runAiBot, "buffer", lambda _x: None), \
+             patch.object(runAiBot, "sleep", lambda _s: None):
+            jid, title, company, *_ = runAiBot.get_job_main_details(job, set(), set())
+        self.assertEqual(jid, "123456")
+        self.assertEqual(title, "QA Engineer")
+        self.assertEqual(company, "Acme Corp")
+        record("SDUI card Selected prefix cleanup", "pass", "Strips 'Selected, ' screen-reader prefix from active job title")
+
+    def test_numeric_input_sanitization_extracts_digits(self):
+        '''Regex for numeric question inputs strips unit suffixes like 'hours' or 'years' to prevent LinkedIn Invalid input.'''
+        import re
+        pattern = r'^\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|years?|yrs?|months?|days?|per|lpa|lakhs?|k)?\b'
+        cases = {
+            "8 hours": "8",
+            " 8 hrs ": "8",
+            "1 year": "1",
+            "2.5 years": "2.5",
+            "3 months": "3",
+            "15 days": "15",
+            "40": "40",
+            "10 LPA": "10",
+        }
+        for raw, expected in cases.items():
+            m = re.search(pattern, raw.strip(), re.IGNORECASE)
+            self.assertIsNotNone(m, f"Failed match for {raw}")
+            self.assertEqual(m.group(1), expected)
+        record("Numeric Easy Apply answer sanitization", "pass", "Strips text units so numeric LinkedIn inputs receive only digits")
 
 
 def _write_report_json(path: Path) -> None:

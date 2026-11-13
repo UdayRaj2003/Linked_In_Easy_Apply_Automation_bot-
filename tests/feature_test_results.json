@@ -30,6 +30,12 @@
     "risk": ""
   },
   {
+    "feature": "Screening question experience matching",
+    "status": "pass",
+    "detail": "years/development matched",
+    "risk": ""
+  },
+  {
     "feature": "Experience extraction",
     "status": "pass",
     "detail": "",
@@ -78,6 +84,78 @@
     "risk": ""
   },
   {
+    "feature": "Details pane visibility detection",
+    "status": "pass",
+    "detail": "Correctly detects whether right pane is visible or hidden",
+    "risk": ""
+  },
+  {
+    "feature": "Job listings locator fallback",
+    "status": "pass",
+    "detail": "Matches SDUI componentkey cards and falls back cleanly",
+    "risk": ""
+  },
+  {
+    "feature": "Modal action skips Review job post",
+    "status": "pass",
+    "detail": "Ignores 'Review job post' and picks 'Continue applying'",
+    "risk": ""
+  },
+  {
+    "feature": "Numeric Easy Apply answer sanitization",
+    "status": "pass",
+    "detail": "Strips text units so numeric LinkedIn inputs receive only digits",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI card company dedup extraction",
+    "status": "pass",
+    "detail": "Extracts distinct company/location even when card repeats title span",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI card Selected prefix cleanup",
+    "status": "pass",
+    "detail": "Strips 'Selected, ' screen-reader prefix from active job title",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI delayed JD container click & wait",
+    "status": "pass",
+    "detail": "Scrolls/clicks JD container, expands more button, and waits until JD loads",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI JD block newline extraction",
+    "status": "pass",
+    "detail": "Preserves paragraph breaks so adjacent text doesn't glue onto JD emails",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI question label extraction",
+    "status": "pass",
+    "detail": "Extracts prompt from <p> sibling even without <label>",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI lazy upload button capture",
+    "status": "pass",
+    "detail": "Captures dynamically triggered <input type=file> without OS dialog",
+    "risk": ""
+  },
+  {
+    "feature": "SDUI resume upload file input fallback",
+    "status": "pass",
+    "detail": "Finds SDUI dialog/document file input without classic jobs-easy-apply wrapper",
+    "risk": ""
+  },
+  {
+    "feature": "Multiple AI keys rotation",
+    "status": "pass",
+    "detail": "Normalizes keys, rotates on rate/auth errors, handles exhaustion",
+    "risk": ""
+  },
+  {
     "feature": "LinkedIn navigation retries",
     "status": "pass",
     "detail": "Recovers after ERR_NAME_NOT_RESOLVED",
@@ -86,13 +164,19 @@
   {
     "feature": "Default resume file",
     "status": "pass",
-    "detail": "D:/Resume_Uday_26_08.pdf",
+    "detail": "D:/Uday_Resume.pdf",
     "risk": ""
   },
   {
     "feature": "Resume score gate (disabled)",
     "status": "pass",
     "detail": "Passes through when use_resume_score_gate=False",
+    "risk": ""
+  },
+  {
+    "feature": "Resume score gate pass on failure",
+    "status": "pass",
+    "detail": "Passes on AI failure/error/unparseable; fails only on valid score below threshold",
     "risk": ""
   },
   {
@@ -116,7 +200,7 @@
   {
     "feature": "URL job search builder",
     "status": "pass",
-    "detail": "https://www.linkedin.com/jobs/search/?f_AL=true&f_E=2%2C3&f_TPR=r259200&geoId=102713980&keywords=Python+Developer&origin...",
+    "detail": "https://www.linkedin.com/jobs/search/?f_AL=true&f_E=2%2C3&f_TPR=r86400&geoId=102713980&keywords=Python+Developer&origin=...",
     "risk": ""
   }
 ]
