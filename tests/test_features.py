@@ -771,6 +771,17 @@ class TestJobListings(unittest.TestCase):
             self.assertEqual(m.group(1), expected)
         record("Numeric Easy Apply answer sanitization", "pass", "Strips text units so numeric LinkedIn inputs receive only digits")
 
+    def test_answer_common_questions_negative_qualification(self):
+        '''Questions with "please don't apply" or requiring experience beyond candidate return No.'''
+        import runAiBot
+        q1 = 'Do you have more than 2 years of work experience? If "Yes," please don\'t apply.'
+        self.assertEqual(runAiBot.answer_common_questions(q1, "Yes"), "No")
+        q2 = "Do you have more than 3 years of experience in React?"
+        self.assertEqual(runAiBot.answer_common_questions(q2, "Yes"), "No")
+        q3 = "Do you require sponsorship?"
+        self.assertEqual(runAiBot.answer_common_questions(q3, "Yes"), runAiBot.require_visa)
+        record("Negative qualification screening", "pass", "Answers 'No' to questions instructing candidate not to apply if yes")
+
 
 def _write_report_json(path: Path) -> None:
     path.write_text(json.dumps(RESULTS, indent=2), encoding="utf-8")

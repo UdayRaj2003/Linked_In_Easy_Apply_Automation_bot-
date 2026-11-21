@@ -159,7 +159,6 @@ bad_words = [
     "Ruby",
     "CNC",  
     "Trainer",
-    "Mentor",
     "Teacher",
 ]
 

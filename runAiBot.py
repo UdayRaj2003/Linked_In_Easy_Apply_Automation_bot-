@@ -1273,6 +1273,7 @@ def _prepare_resume_pdf_for_job(
         output_dir=output_dir,
         timeout=float(resume_generation_timeout),
         cancel_check=should_stop,
+        company_name=company,
     )
     if result.reason == "cancelled":
         raise BotStopped("Resume generation cancelled by user")
@@ -1567,14 +1568,14 @@ def _find_easy_apply_button(texts: tuple[str, ...] | list[str], modal: WebElemen
     scopes.append(driver)
     for text in texts:
         xpaths = [
-            f'.//span[normalize-space(.)="{text}"]',
             f'.//button[normalize-space(.)="{text}"]',
             f'.//button[.//span[normalize-space(.)="{text}"]]',
             f'.//button[contains(@aria-label,"{text}")]',
-            f'//div[contains(@class,"jobs-easy-apply")]//span[normalize-space(.)="{text}"]',
-            f'//div[contains(@class,"jobs-easy-apply")]//button[.//span[normalize-space(.)="{text}"] or normalize-space(.)="{text}"]',
-            f'//footer//span[normalize-space(.)="{text}"]',
             f'//footer//button[.//span[normalize-space(.)="{text}"] or normalize-space(.)="{text}"]',
+            f'//div[contains(@class,"jobs-easy-apply")]//button[.//span[normalize-space(.)="{text}"] or normalize-space(.)="{text}"]',
+            f'.//span[normalize-space(.)="{text}"]',
+            f'//footer//span[normalize-space(.)="{text}"]',
+            f'//div[contains(@class,"jobs-easy-apply")]//span[normalize-space(.)="{text}"]',
         ]
         for scope in scopes:
             for xp in xpaths:
@@ -1582,6 +1583,12 @@ def _find_easy_apply_button(texts: tuple[str, ...] | list[str], modal: WebElemen
                     for el in scope.find_elements(By.XPATH, xp):
                         try:
                             if el.is_displayed():
+                                try:
+                                    btn = el.find_element(By.XPATH, "./ancestor-or-self::button")
+                                    if btn and btn.is_displayed():
+                                        el = btn
+                                except Exception:
+                                    pass
                                 return el, text
                         except Exception:
                             continue
@@ -1728,7 +1735,14 @@ def _upload_resume_on_review(modal: WebElement, resume: str, work_location: str 
 
 # Function to answer common questions for Easy Apply
 def answer_common_questions(label: str, answer: str) -> str:
-    if 'sponsorship' in label or 'visa' in label: answer = require_visa
+    label_l = label.lower()
+    if 'sponsorship' in label_l or 'visa' in label_l: answer = require_visa
+    elif any(q in label_l for q in ("don't apply", "do not apply", "please don't apply")):
+        answer = "No"
+    elif "more than" in label_l and "year" in label_l:
+        m = re.search(r'more than\s*(\d+)\s*year', label_l)
+        if m and int(m.group(1)) >= 2:
+            answer = "No"
     return answer
 
 
@@ -3231,7 +3245,16 @@ def apply_to_jobs(search_terms: list[str]) -> None:
     if randomize_search_order:  shuffle(search_terms)
     for searchTerm in search_terms:
         search_url = build_jobs_search_url(searchTerm)
-        driver.get(search_url)
+        try:
+            open_url_with_retries(driver, search_url, attempts=3, wait_secs=3.0)
+        except Exception as e:
+            if _is_dead_browser_error(e):
+                raise
+            print_lg(
+                f'Failed to open search URL for "{searchTerm}" after retries: {e}. '
+                f'Switching to next search query...\n'
+            )
+            continue
         print_lg("\n________________________________________________________________________________________________________________________\n")
         print_lg(f'\n>>>> Now searching for "{searchTerm}" <<<<\n\n')
         print_lg(f"Search URL: {search_url}")
@@ -3803,23 +3826,32 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                             submit_btn, _ = _find_easy_apply_button(("Submit application",), modal)
                                             submitted_ok = False
                                             if submit_btn is not None:
-                                                try:
-                                                    scroll_to_view(driver, submit_btn)
-                                                    submit_btn.click()
-                                                except Exception:
+                                                for click_fn in (
+                                                    lambda b: (scroll_to_view(driver, b), b.click()),
+                                                    lambda b: driver.execute_script("arguments[0].click();", b),
+                                                    lambda b: actions.move_to_element(b).click().perform(),
+                                                ):
                                                     try:
-                                                        driver.execute_script("arguments[0].click();", submit_btn)
+                                                        click_fn(submit_btn)
+                                                        sleep(1.5)
+                                                        if not _submit_application_visible(driver) or wait_span_click(driver, "Done", 2, click=False):
+                                                            submitted_ok = True
+                                                            break
                                                     except Exception:
-                                                        submit_btn = None
-                                                if submit_btn is not None:
-                                                    submitted_ok = True
+                                                        pass
                                             if not submitted_ok:
-                                                submitted_ok = bool(
-                                                    wait_span_click(driver, "Submit application", 2, scrollTop=True)
-                                                )
+                                                try:
+                                                    clicked_span = wait_span_click(driver, "Submit application", 2, scrollTop=True)
+                                                    if clicked_span:
+                                                        sleep(1.5)
+                                                        if not _submit_application_visible(driver) or wait_span_click(driver, "Done", 2, click=False):
+                                                            submitted_ok = True
+                                                except Exception:
+                                                    pass
                                             if submitted_ok:
                                                 date_applied = datetime.now()
                                                 if not wait_span_click(driver, "Done", 2):
+                                                    try_xp(driver, "//dialog[@open]//button[@aria-label='Dismiss'] | //button[@data-test-modal-close-btn]")
                                                     actions.send_keys(Keys.ESCAPE).perform()
                                             elif cur_pause_before_submit and "Yes" in pyautogui.confirm("You submitted the application, didn't you 😒?", "Failed to find Submit Application!", ["Yes", "No"]):
                                                 date_applied = datetime.now()
